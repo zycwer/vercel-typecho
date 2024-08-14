@@ -24,8 +24,6 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 class General extends Options implements ActionInterface
 {
-    use EditTrait;
-
     /**
      * 检查是否在语言列表中
      *
@@ -98,7 +96,7 @@ class General extends Options implements ActionInterface
         $settings['attachmentTypes'] = $this->request->getArray('attachmentTypes');
 
         if (!defined('__TYPECHO_SITE_URL__')) {
-            $settings['siteUrl'] = rtrim($this->request->get('siteUrl'), '/');
+            $settings['siteUrl'] = rtrim($this->request->siteUrl, '/');
         }
 
         $attachmentTypes = [];
@@ -114,7 +112,7 @@ class General extends Options implements ActionInterface
             $attachmentTypes[] = '@doc@';
         }
 
-        $attachmentTypesOther = $this->request->filter('trim', 'strtolower')->get('attachmentTypesOther');
+        $attachmentTypesOther = $this->request->filter('trim', 'strtolower')->attachmentTypesOther;
         if ($this->isEnableByCheckbox($settings['attachmentTypes'], '@other@') && !empty($attachmentTypesOther)) {
             $types = implode(
                 ',',
@@ -153,7 +151,7 @@ class General extends Options implements ActionInterface
 
         /** 站点地址 */
         if (!defined('__TYPECHO_SITE_URL__')) {
-            $siteUrl = new Form\Element\Url(
+            $siteUrl = new Form\Element\Text(
                 'siteUrl',
                 null,
                 $this->options->originalSiteUrl,

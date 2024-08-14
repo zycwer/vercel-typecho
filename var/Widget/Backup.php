@@ -25,7 +25,7 @@ class Backup extends BaseOptions implements ActionInterface
     /**
      * @var array
      */
-    private array $types = [
+    private $types = [
         'contents'      => 1,
         'comments'      => 2,
         'metas'         => 3,
@@ -37,7 +37,7 @@ class Backup extends BaseOptions implements ActionInterface
     /**
      * @var array
      */
-    private array $fields = [
+    private $fields = [
         'contents'      => [
             'cid', 'title', 'slug', 'created', 'modified', 'text', 'order', 'authorId',
             'template', 'type', 'status', 'password', 'commentsNum', 'allowComment', 'allowPing', 'allowFeed', 'parent'
@@ -62,17 +62,17 @@ class Backup extends BaseOptions implements ActionInterface
     /**
      * @var array
      */
-    private array $lastIds = [];
+    private $lastIds = [];
 
     /**
      * @var array
      */
-    private array $cleared = [];
+    private $cleared = [];
 
     /**
      * @var bool
      */
-    private bool $login = false;
+    private $login = false;
 
     /**
      * 列出已有备份文件
@@ -126,7 +126,7 @@ class Backup extends BaseOptions implements ActionInterface
             } while (count($rows) == 20);
         }
 
-        self::pluginHandle()->call('export', $fp);
+        self::pluginHandle()->export($fp);
         fwrite($fp, $header);
         fclose($fp);
 

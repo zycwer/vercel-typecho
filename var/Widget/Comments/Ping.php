@@ -26,7 +26,7 @@ class Ping extends Comments
      * @var boolean
      * @access private
      */
-    private bool $customSinglePingCallback = false;
+    private $customSinglePingCallback = false;
 
     /**
      * @param Config $parameter
@@ -111,11 +111,10 @@ class Ping extends Comments
      *
      * @param string $singlePingOptions 单个回响自定义选项
      */
-    private function singlePingCallback(string $singlePingOptions): void
+    private function singlePingCallback(string $singlePingOptions)
     {
         if ($this->customSinglePingCallback) {
-            singlePing($this, $singlePingOptions);
-            return;
+            return singlePing($this, $singlePingOptions);
         }
 
         ?>

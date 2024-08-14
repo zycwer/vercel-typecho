@@ -17,7 +17,7 @@ class Date
      * @access public
      * @var integer
      */
-    public static int $timezoneOffset = 0;
+    public static $timezoneOffset = 0;
 
     /**
      * 服务器时区偏移
@@ -25,7 +25,7 @@ class Date
      * @access public
      * @var integer
      */
-    public static int $serverTimezoneOffset = 0;
+    public static $serverTimezoneOffset = 0;
 
     /**
      * 当前的服务器时间戳
@@ -33,7 +33,7 @@ class Date
      * @access public
      * @var integer
      */
-    public static int $serverTimeStamp = 0;
+    public static $serverTimeStamp;
 
     /**
      * 可以被直接转换的时间戳
@@ -41,22 +41,22 @@ class Date
      * @access public
      * @var integer
      */
-    public int $timeStamp = 0;
+    public $timeStamp = 0;
 
     /**
      * @var string
      */
-    public string $year;
+    public $year;
 
     /**
      * @var string
      */
-    public string $month;
+    public $month;
 
     /**
      * @var string
      */
-    public string $day;
+    public $day;
 
     /**
      * 初始化参数

@@ -29,7 +29,7 @@ class Query
      * @var array
      * @access private
      */
-    private static array $default = [
+    private static $default = [
         'action' => null,
         'table'  => null,
         'fields' => '*',
@@ -48,14 +48,14 @@ class Query
      *
      * @var Adapter
      */
-    private Adapter $adapter;
+    private $adapter;
 
     /**
      * 查询语句预结构,由数组构成,方便组合为SQL查询字符串
      *
      * @var array
      */
-    private array $sqlPreBuild;
+    private $sqlPreBuild;
 
     /**
      * 前缀
@@ -63,12 +63,12 @@ class Query
      * @access private
      * @var string
      */
-    private string $prefix;
+    private $prefix;
 
     /**
      * @var array
      */
-    private array $params = [];
+    private $params = [];
 
     /**
      * 构造函数,引用数据库适配器作为内部数据
@@ -211,6 +211,7 @@ class Query
                 $split .= $cha;
                 $lastIsAlnum = false;
             }
+
         }
 
         return $result;

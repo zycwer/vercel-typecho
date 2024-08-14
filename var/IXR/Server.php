@@ -16,19 +16,19 @@ class Server
      *
      * @var array
      */
-    private array $callbacks;
+    private $callbacks;
 
     /**
      * 默认参数
      *
      * @var array
      */
-    private array $capabilities;
+    private $capabilities;
 
     /**
      * @var Hook
      */
-    private Hook $hook;
+    private $hook;
 
     /**
      * 构造函数
@@ -248,9 +248,9 @@ class Server
      *
      * @access private
      * @param string $method 方法名
-     * @return bool
+     * @return mixed
      */
-    private function hasMethod(string $method): bool
+    private function hasMethod(string $method)
     {
         return in_array($method, array_keys($this->callbacks));
     }

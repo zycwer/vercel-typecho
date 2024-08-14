@@ -5,10 +5,8 @@ namespace Widget\Comments;
 use Typecho\Config;
 use Typecho\Cookie;
 use Typecho\Router;
-use Typecho\Widget\Exception;
 use Typecho\Widget\Helper\PageNavigator\Box;
 use Widget\Base\Comments;
-use Widget\Base\Contents;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
@@ -30,7 +28,7 @@ class Archive extends Comments
      * @access private
      * @var integer
      */
-    private int $currentPage;
+    private $currentPage;
 
     /**
      * 所有文章个数
@@ -38,7 +36,7 @@ class Archive extends Comments
      * @access private
      * @var integer
      */
-    private int $total = 0;
+    private $total = false;
 
     /**
      * 子父级评论关系
@@ -46,29 +44,22 @@ class Archive extends Comments
      * @access private
      * @var array
      */
-    private array $threadedComments = [];
+    private $threadedComments = [];
 
     /**
      * _singleCommentOptions
      *
-     * @var Config|null
+     * @var mixed
      * @access private
      */
-    private ?Config $singleCommentOptions = null;
+    private $singleCommentOptions = null;
 
     /**
      * @param Config $parameter
      */
     protected function initParameter(Config $parameter)
     {
-        $parameter->setDefault([
-            'parentId' => 0,
-            'respondId' => '',
-            'commentPage' => 0,
-            'commentsNum' => 0,
-            'allowComment' => 1,
-            'parentContent' => null,
-        ]);
+        $parameter->setDefault('parentId=0&commentPage=0&commentsNum=0&allowComment=1');
     }
 
     /**
@@ -82,7 +73,7 @@ class Archive extends Comments
             $args[] = '%d';
         }
 
-        $num = $this->total;
+        $num = intval($this->total);
 
         echo sprintf($args[$num] ?? array_pop($args), $num);
     }
@@ -99,14 +90,18 @@ class Archive extends Comments
             return;
         }
 
-        $unapprovedCommentId = intval(Cookie::get('__typecho_unapproved_comment', 0));
-        $select = $this->select()->where('cid = ?', $this->parameter->parentId)
+        $commentsAuthor = Cookie::get('__typecho_remember_author');
+        $commentsMail = Cookie::get('__typecho_remember_mail');
+        $select = $this->select()->where('table.comments.cid = ?', $this->parameter->parentId)
             ->where(
-                'status = ? OR (coid = ? AND status <> ?)',
+                'table.comments.status = ? OR (table.comments.author = ?'
+                    . ' AND table.comments.mail = ? AND table.comments.status = ?)',
                 'approved',
-                $unapprovedCommentId,
-                'approved'
+                $commentsAuthor,
+                $commentsMail,
+                'waiting'
             );
+        $threadedSelect = null;
 
         if ($this->options->commentsShowCommentOnly) {
             $select->where('table.comments.type = ?', 'comment');
@@ -173,11 +168,12 @@ class Archive extends Comments
                 ($this->currentPage - 1) * $this->options->commentsPageSize,
                 $this->options->commentsPageSize
             );
+
+            /** 评论置位 */
+            $this->length = count($this->stack);
+            $this->row = $this->length > 0 ? current($this->stack) : [];
         }
 
-        /** 评论置位 */
-        $this->length = count($this->stack);
-        $this->row = $this->length > 0 ? current($this->stack) : [];
         reset($this->stack);
     }
 
@@ -215,7 +211,7 @@ class Archive extends Comments
      * @param string $splitWord 分割字符
      * @param string|array $template 展现配置信息
      * @return void
-     * @throws Exception
+     * @throws \Typecho\Widget\Exception
      */
     public function pageNav(
         string $prev = '&laquo;',
@@ -237,13 +233,12 @@ class Archive extends Comments
             }
 
             $template = array_merge($default, $config);
-            $query = Router::url('comment_page', [
-                'permalink' => $this->parameter->parentContent->path,
-                'commentPage' => '{commentPage}'
-            ], $this->options->index);
 
-            self::pluginHandle()->trigger($hasNav)->call(
-                'pageNav',
+            $pageRow = $this->parameter->parentContent;
+            $pageRow['permalink'] = $pageRow['pathinfo'];
+            $query = Router::url('comment_page', $pageRow, $this->options->index);
+
+            self::pluginHandle()->trigger($hasNav)->pageNav(
                 $this->currentPage,
                 $this->total,
                 $this->options->commentsPageSize,
@@ -289,10 +284,9 @@ class Archive extends Comments
             'replyWord'     => _t('回复'),
             'commentStatus' => _t('您的评论正等待审核!'),
             'avatarSize'    => 32,
-            'defaultAvatar' => null,
-            'avatarHighRes' => false
+            'defaultAvatar' => null
         ]);
-        self::pluginHandle()->trigger($plugged)->call('listComments', $this->singleCommentOptions, $this);
+        self::pluginHandle()->trigger($plugged)->listComments($this->singleCommentOptions, $this);
 
         if (!$plugged) {
             if ($this->have()) {
@@ -310,12 +304,11 @@ class Archive extends Comments
     /**
      * 评论回调函数
      */
-    private function threadedCommentsCallback(): void
+    private function threadedCommentsCallback()
     {
         $singleCommentOptions = $this->singleCommentOptions;
         if (function_exists('threadedComments')) {
-            threadedComments($this, $singleCommentOptions);
-            return;
+            return threadedComments($this, $singleCommentOptions);
         }
 
         $commentClass = '';
@@ -340,11 +333,7 @@ class Archive extends Comments
             <div class="comment-author" itemprop="creator" itemscope itemtype="http://schema.org/Person">
                 <span
                     itemprop="image">
-                    <?php $this->gravatar(
-                        $singleCommentOptions->avatarSize,
-                        $singleCommentOptions->defaultAvatar,
-                        $singleCommentOptions->avatarHighRes
-                    ); ?>
+                    <?php $this->gravatar($singleCommentOptions->avatarSize, $singleCommentOptions->defaultAvatar); ?>
                 </span>
                 <cite class="fn" itemprop="name"><?php $singleCommentOptions->beforeAuthor();
                     $this->author();
@@ -359,7 +348,7 @@ class Archive extends Comments
                             $singleCommentOptions->afterDate();
                             ?></time>
                 </a>
-                <?php if ('approved' !== $this->status) { ?>
+                <?php if ('waiting' == $this->status) { ?>
                     <em class="comment-awaiting-moderation"><?php $singleCommentOptions->commentStatus(); ?></em>
                 <?php } ?>
             </div>
@@ -385,7 +374,9 @@ class Archive extends Comments
      */
     public function levelsAlt(...$args)
     {
-        $this->altBy($this->levels, ...$args);
+        $num = count($args);
+        $split = $this->levels % $num;
+        echo $args[(0 == $split ? $num : $split) - 1];
     }
 
     /**
@@ -395,8 +386,12 @@ class Archive extends Comments
      */
     public function alt(...$args)
     {
+        $num = count($args);
+
         $sequence = $this->levels <= 0 ? $this->sequence : $this->order;
-        $this->altBy($sequence, ...$args);
+
+        $split = $sequence % $num;
+        echo $args[(0 == $split ? $num : $split) - 1];
     }
 
     /**
@@ -408,12 +403,12 @@ class Archive extends Comments
     {
         if ($this->options->commentsThreaded && !$this->isTopLevel && $this->parameter->allowComment) {
             $word = empty($word) ? _t('回复') : $word;
-            self::pluginHandle()->trigger($plugged)->call('reply', $word, $this);
+            self::pluginHandle()->trigger($plugged)->reply($word, $this);
 
             if (!$plugged) {
                 echo '<a href="' . substr($this->permalink, 0, - strlen($this->theId) - 1) . '?replyTo=' . $this->coid .
                     '#' . $this->parameter->respondId . '" rel="nofollow" onclick="return TypechoComment.reply(\'' .
-                    $this->theId . '\', ' . $this->coid . ', this);">' . $word . '</a>';
+                    $this->theId . '\', ' . $this->coid . ');">' . $word . '</a>';
             }
         }
     }
@@ -454,14 +449,30 @@ class Archive extends Comments
     {
         if ($this->options->commentsThreaded) {
             $word = empty($word) ? _t('取消回复') : $word;
-            self::pluginHandle()->trigger($plugged)->call('cancelReply', $word, $this);
+            self::pluginHandle()->trigger($plugged)->cancelReply($word, $this);
 
             if (!$plugged) {
-                $replyId = $this->request->filter('int')->get('replyTo');
-                echo '<a id="cancel-comment-reply-link" href="' . $this->parameter->parentContent->permalink . '#' . $this->parameter->respondId .
+                $replyId = $this->request->filter('int')->replyTo;
+                echo '<a id="cancel-comment-reply-link" href="' . $this->parameter->parentContent['permalink'] . '#' . $this->parameter->respondId .
                     '" rel="nofollow"' . ($replyId ? '' : ' style="display:none"') . ' onclick="return TypechoComment.cancelReply();">' . $word . '</a>';
             }
         }
+    }
+
+    /**
+     * 获取当前评论链接
+     *
+     * @return string
+     */
+    protected function ___permalink(): string
+    {
+
+        if ($this->options->commentsPageBreak) {
+            $pageRow = ['permalink' => $this->parentContent['pathinfo'], 'commentPage' => $this->currentPage];
+            return Router::url('comment_page', $pageRow, $this->options->index) . '#' . $this->theId;
+        }
+
+        return $this->parentContent['permalink'] . '#' . $this->theId;
     }
 
     /**
@@ -486,21 +497,11 @@ class Archive extends Comments
     }
 
     /**
-     * 重载评论页码获取
-     *
-     * @return int
-     */
-    protected function ___commentPage(): int
-    {
-        return $this->currentPage;
-    }
-
-    /**
      * 重载内容获取
      *
-     * @return Contents
+     * @return array|null
      */
-    protected function ___parentContent(): Contents
+    protected function ___parentContent(): ?array
     {
         return $this->parameter->parentContent;
     }

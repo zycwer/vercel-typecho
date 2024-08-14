@@ -21,7 +21,7 @@ class Notice extends Widget
      *
      * @var string
      */
-    public string $highlight;
+    public $highlight;
 
     /**
      * 高亮相关元素

@@ -16,42 +16,42 @@ abstract class PageNavigator
      *
      * @var integer
      */
-    protected int $total;
+    protected $total;
 
     /**
      * 页面总数
      *
      * @var integer
      */
-    protected int $totalPage;
+    protected $totalPage;
 
     /**
      * 当前页面
      *
      * @var integer
      */
-    protected int $currentPage;
+    protected $currentPage;
 
     /**
      * 每页内容数
      *
      * @var integer
      */
-    protected int $pageSize;
+    protected $pageSize;
 
     /**
      * 页面链接模板
      *
      * @var string
      */
-    protected string $pageTemplate;
+    protected $pageTemplate;
 
     /**
      * 链接锚点
      *
      * @var string
      */
-    protected string $anchor = '';
+    protected $anchor;
 
     /**
      * 页面占位符
@@ -110,6 +110,6 @@ abstract class PageNavigator
      */
     public function render()
     {
-        throw new Exception('Method Not Implemented', 500);
+        throw new Exception(get_class($this) . ':' . __METHOD__, 500);
     }
 }

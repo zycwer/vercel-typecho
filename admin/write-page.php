@@ -2,19 +2,7 @@
 include 'common.php';
 include 'header.php';
 include 'menu.php';
-
-$page = \Widget\Contents\Page\Edit::alloc()->prepare();
-
-$parentPageId = $page->getParent();
-$parentPages = [0 => _t('不选择')];
-$parents = \Widget\Contents\Page\Admin::allocWithAlias(
-    'options',
-    'ignoreRequest=1' . ($request->is('cid') ? '&ignore=' . $request->get('cid') : '')
-);
-
-while ($parents->next()) {
-    $parentPages[$parents->cid] = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $parents->levels) . $parents->title;
-}
+\Widget\Contents\Page\Edit::alloc()->to($page);
 ?>
 <div class="main">
     <div class="body container">
@@ -26,7 +14,7 @@ while ($parents->next()) {
                         <?php if ($page->draft['cid'] != $page->cid): ?>
                             <?php $pageModifyDate = new \Typecho\Date($page->draft['modified']); ?>
                             <cite
-                                class="edit-draft-notice"><?php _e('你正在编辑的是保存于 %s 的修订版, 你也可以 <a href="%s">删除它</a>', $pageModifyDate->word(),
+                                class="edit-draft-notice"><?php _e('当前正在编辑的是保存于%s的草稿, 你可以<a href="%s">删除它</a>', $pageModifyDate->word(),
                                     $security->getIndex('/action/contents-page-edit?do=deleteDraft&cid=' . $page->cid)); ?></cite>
                         <?php else: ?>
                             <cite class="edit-draft-notice"><?php _e('当前正在编辑的是未发布的草稿'); ?></cite>
@@ -44,31 +32,18 @@ while ($parents->next()) {
                     $permalink = ltrim($permalink, '/');
                     $permalink = preg_replace("/\[([_a-z0-9-]+)[^\]]*\]/i", "{\\1}", $permalink);
                     if ($page->have()) {
-                        $permalink = preg_replace_callback(
-                            "/\{(cid)\}/i",
-                            function ($matches) use ($page) {
-                                $key = $matches[1];
-                                return $page->getRouterParam($key);
-                            },
-                            $permalink
-                        );
+                        $permalink = str_replace('{cid}', $page->cid, $permalink);
                     }
                     $input = '<input type="text" id="slug" name="slug" autocomplete="off" value="' . htmlspecialchars($page->slug ?? '') . '" class="mono" />';
                     ?>
                     <p class="mono url-slug">
                         <label for="slug" class="sr-only"><?php _e('网址缩略名'); ?></label>
-                        <?php echo preg_replace_callback("/\{(slug|directory)\}/i", function ($matches) use ($input) {
-                            if ($matches[1] == 'slug') {
-                                return $input;
-                            } else {
-                                return '{directory/' . $input . '}';
-                            }
-                        }, $permalink); ?>
+                        <?php echo preg_replace("/\{slug\}/i", $input, $permalink); ?>
                     </p>
                     <p>
                         <label for="text" class="sr-only"><?php _e('页面内容'); ?></label>
                         <textarea style="height: <?php $options->editorSize(); ?>px" autocomplete="off" id="text"
-                                  name="text" class="w-100 mono"><?php echo htmlspecialchars($page->text); ?></textarea>
+                                  name="text" class="w-100 mono"><?php echo htmlspecialchars($page->text ?? ''); ?></textarea>
                     </p>
 
                     <?php include 'custom-fields.php'; ?>
@@ -78,7 +53,6 @@ while ($parents->next()) {
                                     class="i-caret-left"></i> <?php _e('取消预览'); ?></button>
                         </span>
                         <span class="right">
-                            <input type="hidden" name="do" value="publish" />
                             <input type="hidden" name="cid" value="<?php $page->cid(); ?>"/>
                             <button type="button" id="btn-preview" class="btn"><i
                                     class="i-exlink"></i> <?php _e('预览页面'); ?></button>
@@ -92,7 +66,7 @@ while ($parents->next()) {
                         </span>
                     </p>
 
-                    <?php \Typecho\Plugin::factory('admin/write-page.php')->call('content', $page); ?>
+                    <?php \Typecho\Plugin::factory('admin/write-page.php')->content($page); ?>
                 </div>
                 <div id="edit-secondary" class="col-mb-12 col-tb-3" role="complementary">
                     <ul class="typecho-option-tabs clearfix">
@@ -130,20 +104,7 @@ while ($parents->next()) {
                             <p class="description"><?php _e('如果你为此页面选择了一个自定义模板, 系统将按照你选择的模板文件展现它'); ?></p>
                         </section>
 
-                        <section class="typecho-post-option">
-                            <label for="parent" class="typecho-label"><?php _e('父级页面'); ?></label>
-                            <p>
-                                <select name="parent" id="parent">
-                                    <?php foreach ($parentPages as $pageId => $pageTitle): ?>
-                                        <option
-                                            value="<?php echo $pageId; ?>"<?php if ($pageId == ($page->parent ?? $parentPageId)): ?> selected="true"<?php endif; ?>><?php echo $pageTitle; ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </p>
-                            <p class="description"><?php _e('如果你设定了父级页面, 此页面将作为子页面呈现'); ?></p>
-                        </section>
-
-                        <?php \Typecho\Plugin::factory('admin/write-page.php')->call('option', $page); ?>
+                        <?php \Typecho\Plugin::factory('admin/write-page.php')->option($page); ?>
 
                         <button type="button" id="advance-panel-btn" class="btn btn-xs"><?php _e('高级选项'); ?> <i
                                 class="i-caret-down"></i></button>
@@ -175,7 +136,7 @@ while ($parents->next()) {
                                 </ul>
                             </section>
 
-                            <?php \Typecho\Plugin::factory('admin/write-page.php')->call('advanceOption', $page); ?>
+                            <?php \Typecho\Plugin::factory('admin/write-page.php')->advanceOption($page); ?>
                         </div>
                         <?php if ($page->have()): ?>
                             <?php $modified = new \Typecho\Date($page->modified); ?>
@@ -206,7 +167,7 @@ include 'common-js.php';
 include 'form-js.php';
 include 'write-js.php';
 
-\Typecho\Plugin::factory('admin/write-page.php')->trigger($plugged)->call('richEditor', $page);
+\Typecho\Plugin::factory('admin/write-page.php')->trigger($plugged)->richEditor($page);
 if (!$plugged) {
     include 'editor-js.php';
 }

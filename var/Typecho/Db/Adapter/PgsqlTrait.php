@@ -11,17 +11,17 @@ trait PgsqlTrait
     /**
      * @var array
      */
-    private array $pk = [];
+    private $pk = [];
 
     /**
      * @var bool
      */
-    private bool $compatibleInsert = false;
+    private $compatibleInsert = false;
 
     /**
      * @var string|null
      */
-    private ?string $lastInsertTable = null;
+    private $lastInsertTable = null;
 
     /**
      * 清空数据表

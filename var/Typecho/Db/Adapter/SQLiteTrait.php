@@ -9,7 +9,7 @@ trait SQLiteTrait
 {
     use QueryTrait;
 
-    private bool $isSQLite2 = false;
+    private $isSQLite2 = false;
 
     /**
      * 清空数据表

@@ -14,7 +14,7 @@ class Base64
      *
      * @var string
      */
-    private string $data;
+    private $data;
 
     /**
      * 初始化数据

@@ -55,14 +55,14 @@ class Db
      * 数据库适配器
      * @var Adapter
      */
-    private Adapter $adapter;
+    private $adapter;
 
     /**
      * 默认配置
      *
      * @var array
      */
-    private array $config;
+    private $config;
 
     /**
      * 已经连接
@@ -70,7 +70,7 @@ class Db
      * @access private
      * @var array
      */
-    private array $connectedPool;
+    private $connectedPool;
 
     /**
      * 前缀
@@ -78,7 +78,7 @@ class Db
      * @access private
      * @var string
      */
-    private string $prefix;
+    private $prefix;
 
     /**
      * 适配器名称
@@ -86,13 +86,13 @@ class Db
      * @access private
      * @var string
      */
-    private string $adapterName;
+    private $adapterName;
 
     /**
      * 实例化的数据库对象
      * @var Db
      */
-    private static Db $instance;
+    private static $instance;
 
     /**
      * 数据库类构造函数
@@ -387,11 +387,9 @@ class Db
         /** 选择连接池 */
         $handle = $this->selectDb($op);
 
-        /** 如果是查询对象,则将其转换为查询语句 */
-        $sql = $query instanceof Query ? $query->prepare($query) : $query;
-
         /** 提交查询 */
-        $resource = $this->adapter->query($sql, $handle, $op, $action, $table);
+        $resource = $this->adapter->query($query instanceof Query ?
+            $query->prepare($query) : $query, $handle, $op, $action, $table);
 
         if ($action) {
             //根据查询动作返回相应资源
@@ -451,10 +449,10 @@ class Db
      *
      * @param mixed $query 查询对象
      * @param array|null $filter 行过滤器函数,将查询的每一行作为第一个参数传入指定的过滤器中
-     * @return \stdClass|null
+     * @return object|null
      * @throws DbException
      */
-    public function fetchObject($query, ?array $filter = null): ?\stdClass
+    public function fetchObject($query, ?array $filter = null): ?object
     {
         $resource = $this->query($query);
 

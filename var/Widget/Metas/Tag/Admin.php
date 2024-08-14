@@ -38,9 +38,9 @@ class Admin extends Cloud
      */
     public function getMenuTitle(): ?string
     {
-        if ($this->request->is('mid')) {
+        if (isset($this->request->mid)) {
             $tag = $this->db->fetchRow($this->select()
-                ->where('type = ? AND mid = ?', 'tag', $this->request->get('mid')));
+                ->where('type = ? AND mid = ?', 'tag', $this->request->mid));
 
             if (!empty($tag)) {
                 return _t('编辑标签 %s', $tag['name']);

@@ -12,13 +12,13 @@ namespace Utils;
  */
 class PasswordHash
 {
-    private string $itoa64;
+    private $itoa64;
 
-    private int $iteration_count_log2;
+    private $iteration_count_log2;
 
-    private bool $portable_hashes;
+    private $portable_hashes;
 
-    private string $random_state;
+    private $random_state;
 
     /**
      * @param int $iteration_count_log2

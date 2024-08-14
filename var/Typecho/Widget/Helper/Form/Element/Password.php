@@ -3,6 +3,7 @@
 namespace Typecho\Widget\Helper\Form\Element;
 
 use Typecho\Widget\Helper\Form\Element;
+use Typecho\Widget\Helper\Layout;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
@@ -18,22 +19,30 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 class Password extends Element
 {
-    use TextInputTrait;
-
     /**
-     * @param string $value
-     * @return string
+     * 初始化当前输入项
+     *
+     * @param string|null $name 表单元素名称
+     * @param array|null $options 选择项
+     * @return Layout|null
      */
-    protected function filterValue(string $value): string
+    public function input(?string $name = null, ?array $options = null): ?Layout
     {
-        return htmlspecialchars($value);
+        $input = new Layout('input', ['id' => $name . '-0-' . self::$uniqueId,
+            'name' => $name, 'type' => 'password', 'class' => 'password']);
+        $this->label->setAttribute('for', $name . '-0-' . self::$uniqueId);
+        $this->container($input);
+        $this->inputs[] = $input;
+        return $input;
     }
 
     /**
-     * @return string
+     * 设置表单项默认值
+     *
+     * @param mixed $value 表单项默认值
      */
-    protected function getType(): string
+    protected function inputValue($value)
     {
-        return 'password';
+        $this->input->setAttribute('value', htmlspecialchars($value));
     }
 }

@@ -3,7 +3,6 @@
 namespace Widget\Comments;
 
 use Typecho\Db\Exception;
-use Typecho\Db\Query;
 use Widget\Base\Comments;
 use Widget\ActionInterface;
 use Widget\Notice;
@@ -49,30 +48,6 @@ class Edit extends Comments implements ActionInterface
     }
 
     /**
-     * 评论是否可以被修改
-     *
-     * @param Query|null $condition 条件
-     * @return bool
-     * @throws Exception|\Typecho\Widget\Exception
-     */
-    public function commentIsWriteable(?Query $condition = null): bool
-    {
-        if (empty($condition)) {
-            if ($this->have() && ($this->user->pass('editor', true) || $this->ownerId == $this->user->uid)) {
-                return true;
-            }
-        } else {
-            $post = $this->db->fetchRow($condition->select('ownerId')->from('table.comments')->limit(1));
-
-            if ($post && ($this->user->pass('editor', true) || $post['ownerId'] == $this->user->uid)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * 标记评论状态
      *
      * @param integer $coid 评论主键
@@ -80,14 +55,14 @@ class Edit extends Comments implements ActionInterface
      * @return boolean
      * @throws Exception
      */
-    private function mark(int $coid, string $status): bool
+    private function mark($coid, $status)
     {
         $comment = $this->db->fetchRow($this->select()
             ->where('coid = ?', $coid)->limit(1), [$this, 'push']);
 
         if ($comment && $this->commentIsWriteable()) {
             /** 增加评论编辑插件接口 */
-            self::pluginHandle()->call('mark', $comment, $this, $status);
+            self::pluginHandle()->mark($comment, $this, $status);
 
             /** 不必更新的情况 */
             if ($status == $comment['status']) {
@@ -183,7 +158,7 @@ class Edit extends Comments implements ActionInterface
                 ->where('coid = ?', $coid)->limit(1), [$this, 'push']);
 
             if ($comment && $this->commentIsWriteable()) {
-                self::pluginHandle()->call('delete', $comment, $this);
+                self::pluginHandle()->delete($comment, $this);
 
                 /** 删除评论 */
                 $this->db->query($this->db->delete('table.comments')->where('coid = ?', $coid));
@@ -194,7 +169,7 @@ class Edit extends Comments implements ActionInterface
                         ->expression('commentsNum', 'commentsNum - 1')->where('cid = ?', $comment['cid']));
                 }
 
-                self::pluginHandle()->call('finishDelete', $comment, $this);
+                self::pluginHandle()->finishDelete($comment, $this);
 
                 $deleteRows++;
             }
@@ -233,12 +208,12 @@ class Edit extends Comments implements ActionInterface
     public function deleteSpamComment()
     {
         $deleteQuery = $this->db->delete('table.comments')->where('status = ?', 'spam');
-        if (!$this->request->is('__typecho_all_comments=on') || !$this->user->pass('editor', true)) {
+        if (!$this->request->__typecho_all_comments || !$this->user->pass('editor', true)) {
             $deleteQuery->where('ownerId = ?', $this->user->uid);
         }
 
-        if ($this->request->is('cid')) {
-            $deleteQuery->where('cid = ?', $this->request->get('cid'));
+        if (isset($this->request->cid)) {
+            $deleteQuery->where('cid = ?', $this->request->cid);
         }
 
         $deleteRows = $this->db->query($deleteQuery);
@@ -260,7 +235,7 @@ class Edit extends Comments implements ActionInterface
      */
     public function getComment()
     {
-        $coid = $this->request->filter('int')->get('coid');
+        $coid = $this->request->filter('int')->coid;
         $comment = $this->db->fetchRow($this->select()
             ->where('coid = ?', $coid)->limit(1), [$this, 'push']);
 
@@ -285,22 +260,22 @@ class Edit extends Comments implements ActionInterface
      */
     public function editComment(): bool
     {
-        $coid = $this->request->filter('int')->get('coid');
+        $coid = $this->request->filter('int')->coid;
         $commentSelect = $this->db->fetchRow($this->select()
             ->where('coid = ?', $coid)->limit(1), [$this, 'push']);
 
         if ($commentSelect && $this->commentIsWriteable()) {
-            $comment['text'] = $this->request->get('text');
-            $comment['author'] = $this->request->filter('strip_tags', 'trim', 'xss')->get('author');
-            $comment['mail'] = $this->request->filter('strip_tags', 'trim', 'xss')->get('mail');
-            $comment['url'] = $this->request->filter('url')->get('url');
+            $comment['text'] = $this->request->text;
+            $comment['author'] = $this->request->filter('strip_tags', 'trim', 'xss')->author;
+            $comment['mail'] = $this->request->filter('strip_tags', 'trim', 'xss')->mail;
+            $comment['url'] = $this->request->filter('url')->url;
 
             if ($this->request->is('created')) {
-                $comment['created'] = $this->request->filter('int')->get('created');
+                $comment['created'] = $this->request->filter('int')->created;
             }
 
             /** 评论插件接口 */
-            $comment = self::pluginHandle()->call('edit', $comment, $this);
+            $comment = self::pluginHandle()->edit($comment, $this);
 
             /** 更新评论 */
             $this->update($comment, $this->db->sql()->where('coid = ?', $coid));
@@ -310,7 +285,7 @@ class Edit extends Comments implements ActionInterface
             $updatedComment['content'] = $this->content;
 
             /** 评论插件接口 */
-            self::pluginHandle()->call('finishEdit', $this);
+            self::pluginHandle()->finishEdit($this);
 
             $this->response->throwJson([
                 'success' => 1,
@@ -331,7 +306,7 @@ class Edit extends Comments implements ActionInterface
      */
     public function replyComment()
     {
-        $coid = $this->request->filter('int')->get('coid');
+        $coid = $this->request->filter('int')->coid;
         $commentSelect = $this->db->fetchRow($this->select()
             ->where('coid = ?', $coid)->limit(1), [$this, 'push']);
 
@@ -348,12 +323,12 @@ class Edit extends Comments implements ActionInterface
                 'mail'     => $this->user->mail,
                 'url'      => $this->user->url,
                 'parent'   => $coid,
-                'text'     => $this->request->get('text'),
+                'text'     => $this->request->text,
                 'status'   => 'approved'
             ];
 
             /** 评论插件接口 */
-            self::pluginHandle()->call('comment', $comment, $this);
+            self::pluginHandle()->comment($comment, $this);
 
             /** 回复评论 */
             $commentId = $this->insert($comment);
@@ -363,7 +338,7 @@ class Edit extends Comments implements ActionInterface
             $insertComment['content'] = $this->content;
 
             /** 评论完成接口 */
-            self::pluginHandle()->call('finishComment', $this);
+            self::pluginHandle()->finishComment($this);
 
             $this->response->throwJson([
                 'success' => 1,

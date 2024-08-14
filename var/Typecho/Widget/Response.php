@@ -14,12 +14,12 @@ class Response
     /**
      * @var HttpRequest
      */
-    private HttpRequest $request;
+    private $request;
 
     /**
      * @var HttpResponse
      */
-    private HttpResponse $response;
+    private $response;
 
     /**
      * @param HttpRequest $request
@@ -75,63 +75,31 @@ class Response
     }
 
     /**
-     * @param callable $callback
-     * @param string $contentType
-     */
-    public function throwCallback(callable $callback, string $contentType = 'text/html')
-    {
-        $this->response->setContentType($contentType)
-            ->addResponder($callback)
-            ->respond();
-    }
-
-    /**
-     * @return void
-     */
-    public function throwFinish()
-    {
-        $isFastCGI = function_exists('fastcgi_finish_request');
-
-        if (!$isFastCGI) {
-            ob_end_clean();
-            ob_start();
-            $this->setHeader('Connection', 'close');
-            $this->setHeader('Content-Encoding', 'none');
-            $this->setHeader('Content-Length', ob_get_length());
-        }
-
-        $this->response->sendHeaders();
-
-        if (!$isFastCGI) {
-            ob_end_flush();
-            flush();
-        } else {
-            fastcgi_finish_request();
-        }
-    }
-
-    /**
      * @param string $content
      * @param string $contentType
      */
     public function throwContent(string $content, string $contentType = 'text/html')
     {
-        $this->throwCallback(function () use ($content) {
-            echo $content;
-        }, $contentType);
+        $this->response->setContentType($contentType)
+            ->addResponder(function () use ($content) {
+                echo $content;
+            })
+            ->respond();
     }
 
     /**
      * @param mixed $message
      */
-    public function throwXml($message)
+    public function throwXml(string $message)
     {
-        $this->throwCallback(function () use ($message) {
-            echo '<?xml version="1.0" encoding="' . $this->response->getCharset() . '"?>',
-            '<response>',
-            $this->parseXml($message),
-            '</response>';
-        }, 'text/xml');
+        $this->response->setContentType('text/xml')
+            ->addResponder(function () use ($message) {
+                echo '<?xml version="1.0" encoding="' . $this->response->getCharset() . '"?>',
+                '<response>',
+                $this->parseXml($message),
+                '</response>';
+            })
+            ->respond();
     }
 
     /**
@@ -141,9 +109,12 @@ class Response
      */
     public function throwJson($message)
     {
-        $this->throwCallback(function () use ($message) {
-            echo json_encode($message);
-        }, 'application/json');
+        /** 设置http头信息 */
+        $this->response->setContentType('application/json')
+            ->addResponder(function () use ($message) {
+                echo json_encode($message);
+            })
+            ->respond();
     }
 
     /**

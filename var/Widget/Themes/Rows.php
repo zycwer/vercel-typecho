@@ -77,9 +77,10 @@ class Rows extends Widget
      * get theme
      *
      * @param string $theme
+     * @param mixed $index
      * @return string
      */
-    protected function getTheme(string $theme): string
+    protected function getTheme(string $theme, $index): string
     {
         return basename($theme);
     }

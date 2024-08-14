@@ -148,10 +148,8 @@ $isAllPosts = ('on' == $request->get('__typecho_all_posts') || 'on' == \Typecho\
                                         <td>
                                             <a href="<?php $options->adminUrl('write-post.php?cid=' . $posts->cid); ?>"><?php $posts->title(); ?></a>
                                             <?php
-                                            if ('post_draft' == $posts->type) {
+                                            if ($posts->hasSaved || 'post_draft' == $posts->type) {
                                                 echo '<em class="status">' . _t('草稿') . '</em>';
-                                            } elseif ($posts->revision) {
-                                                echo '<em class="status">' . _t('有修订版') . '</em>';
                                             }
 
                                             if ('hidden' == $posts->status) {
@@ -176,18 +174,20 @@ $isAllPosts = ('on' == $request->get('__typecho_all_posts') || 'on' == \Typecho\
                                         <td class="kit-hidden-mb"><a
                                                 href="<?php $options->adminUrl('manage-posts.php?__typecho_all_posts=off&uid=' . $posts->author->uid); ?>"><?php $posts->author(); ?></a>
                                         </td>
-                                        <td class="kit-hidden-mb"><?php foreach($posts->categories as $index => $category): ?><!--
-                                                --><?php echo ($index > 0 ? ', ' : '') . '<a href="';
-                                                $options->adminUrl('manage-posts.php?category=' . $category['mid']
+                                        <td class="kit-hidden-mb"><?php $categories = $posts->categories;
+                                            $length = count($categories); ?>
+                                            <?php foreach ($categories as $key => $val): ?>
+                                                <?php echo '<a href="';
+                                                $options->adminUrl('manage-posts.php?category=' . $val['mid']
                                                     . (isset($request->uid) ? '&uid=' . $request->filter('encode')->uid : '')
                                                     . (isset($request->status) ? '&status=' . $request->filter('encode')->status : ''));
-                                                echo '">' . $category['name'] . '</a>'; ?><!--
-                                            --><?php endforeach; ?>
+                                                echo '">' . $val['name'] . '</a>' . ($key < $length - 1 ? ', ' : ''); ?>
+                                            <?php endforeach; ?>
                                         </td>
                                         <td>
-                                            <?php if ('post_draft' == $posts->type || $posts->revision): ?>
+                                            <?php if ($posts->hasSaved): ?>
                                                 <span class="description">
-                                <?php $modifyDate = new \Typecho\Date($posts->revision ? $posts->revision['modified'] : $posts->modified); ?>
+                                <?php $modifyDate = new \Typecho\Date($posts->modified); ?>
                                 <?php _e('保存于 %s', $modifyDate->word()); ?>
                                 </span>
                                             <?php else: ?>

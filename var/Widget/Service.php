@@ -27,7 +27,7 @@ class Service extends BaseOptions implements ActionInterface
      *
      * @var array
      */
-    public array $asyncRequests = [];
+    public $asyncRequests = [];
 
     /**
      * 发送pingback实现
@@ -48,8 +48,6 @@ class Service extends BaseOptions implements ActionInterface
         if (!Common::timeTokenValidate($token, $this->options->secret, 3) || empty($permalink)) {
             throw new Exception(_t('禁止访问'), 403);
         }
-
-        $this->response->throwFinish();
 
         /** 忽略超时 */
         if (function_exists('ignore_user_abort')) {
@@ -226,7 +224,7 @@ class Service extends BaseOptions implements ActionInterface
      * @param $method
      * @param mixed $params
      */
-    public function requestService($method, ...$params)
+    public function requestService($method, $params = null)
     {
         static $called;
 
@@ -268,8 +266,6 @@ class Service extends BaseOptions implements ActionInterface
             throw new Exception(_t('禁止访问'), 403);
         }
 
-        $this->response->throwFinish();
-
         /** 忽略超时 */
         if (function_exists('ignore_user_abort')) {
             ignore_user_abort(true);
@@ -285,7 +281,7 @@ class Service extends BaseOptions implements ActionInterface
         if (!empty($requests)) {
             foreach ($requests as $request) {
                 [$method, $params] = $request;
-                $plugin->call($method, ... $params);
+                $plugin->{$method}($params);
             }
         }
     }

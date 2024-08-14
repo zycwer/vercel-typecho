@@ -24,8 +24,6 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 class Edit extends Users implements ActionInterface
 {
-    use EditTrait;
-
     /**
      * 执行函数
      *
@@ -38,9 +36,9 @@ class Edit extends Users implements ActionInterface
         $this->user->pass('administrator');
 
         /** 更新模式 */
-        if (($this->request->is('uid') && 'delete' != $this->request->get('do')) || $this->request->is('do=update')) {
+        if (($this->request->uid && 'delete' != $this->request->do) || 'update' == $this->request->do) {
             $this->db->fetchRow($this->select()
-                ->where('uid = ?', $this->request->get('uid'))->limit(1), [$this, 'push']);
+                ->where('uid = ?', $this->request->uid)->limit(1), [$this, 'push']);
 
             if (!$this->have()) {
                 throw new Exception(_t('用户不存在'), 404);
@@ -145,7 +143,7 @@ class Edit extends Users implements ActionInterface
         $form->addInput($confirm);
 
         /** 个人主页地址 */
-        $url = new Form\Element\Text('url', null, null, _t('个人主页地址'), _t('此用户的个人主页地址, 请用 <code>https://</code> 开头.'));
+        $url = new Form\Element\Text('url', null, null, _t('个人主页地址'), _t('此用户的个人主页地址, 请用 <code>http://</code> 开头.'));
         $form->addInput($url);
 
         /** 用户组 */
@@ -174,7 +172,7 @@ class Edit extends Users implements ActionInterface
         $submit->input->setAttribute('class', 'btn primary');
         $form->addItem($submit);
 
-        if ($this->request->is('uid')) {
+        if (null != $this->request->uid) {
             $submit->value(_t('编辑用户'));
             $name->value($this->name);
             $screenName->value($this->screenName);
@@ -246,17 +244,17 @@ class Edit extends Users implements ActionInterface
         }
 
         /** 更新数据 */
-        $this->update($user, $this->db->sql()->where('uid = ?', $this->request->get('uid')));
+        $this->update($user, $this->db->sql()->where('uid = ?', $this->request->uid));
 
         /** 设置高亮 */
-        Notice::alloc()->highlight('user-' . $this->request->get('uid'));
+        Notice::alloc()->highlight('user-' . $this->request->uid);
 
         /** 提示信息 */
         Notice::alloc()->set(_t('用户 %s 已经被更新', $user['screenName']), 'success');
 
         /** 转向原页 */
         $this->response->redirect(Common::url('manage-users.php?' .
-            $this->getPageOffsetQuery($this->request->get('uid')), $this->options->adminUrl));
+            $this->getPageOffsetQuery($this->request->uid), $this->options->adminUrl));
     }
 
     /**

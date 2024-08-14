@@ -3,6 +3,7 @@
 namespace Widget;
 
 use IXR\Date;
+use IXR\Error;
 use IXR\Exception;
 use IXR\Hook;
 use IXR\Pingback;
@@ -14,7 +15,7 @@ use Typecho\Widget;
 use Typecho\Widget\Exception as WidgetException;
 use Widget\Base\Comments;
 use Widget\Base\Contents;
-use Widget\Contents\Attachment\Unattached;
+use Widget\Base\Metas;
 use Widget\Contents\Page\Admin as PageAdmin;
 use Widget\Contents\Post\Admin as PostAdmin;
 use Widget\Contents\Attachment\Admin as AttachmentAdmin;
@@ -23,7 +24,6 @@ use Widget\Contents\Page\Edit as PageEdit;
 use Widget\Contents\Attachment\Edit as AttachmentEdit;
 use Widget\Metas\Category\Edit as CategoryEdit;
 use Widget\Metas\Category\Rows as CategoryRows;
-use Widget\Metas\From as MetasFrom;
 use Widget\Metas\Tag\Cloud;
 use Widget\Comments\Edit as CommentsEdit;
 use Widget\Comments\Admin as CommentsAdmin;
@@ -44,12 +44,27 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 class XmlRpc extends Contents implements ActionInterface, Hook
 {
     /**
+     * 当前错误
+     *
+     * @var Error
+     */
+    private $error;
+
+    /**
      * wordpress风格的系统选项
      *
      * @access private
      * @var array
      */
-    private array $wpOptions;
+    private $wpOptions;
+
+    /**
+     * 已经使用过的组件列表
+     *
+     * @access private
+     * @var array
+     */
+    private $usedWidgetNameList = [];
 
     /**
      * 如果这里没有重载, 每次都会被默认执行
@@ -90,12 +105,12 @@ class XmlRpc extends Contents implements ActionInterface, Hook
             'login_url'        => [
                 'desc'     => _t('登录地址'),
                 'readonly' => true,
-                'value'    => $this->options->loginUrl
+                'value'    => $this->options->siteUrl . 'admin/login.php'
             ],
             'admin_url'        => [
                 'desc'     => _t('管理区域的地址'),
                 'readonly' => true,
-                'value'    => $this->options->adminUrl
+                'value'    => $this->options->siteUrl . 'admin/'
             ],
 
             'post_thumbnail'     => [
@@ -166,7 +181,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
             'link'                   => $page->permalink,
             'permaLink'              => $page->permalink,
             'categories'             => $page->categories,
-            'excerpt'                => $page->plainExcerpt,
+            'excerpt'                => $page->description,
             'text_more'              => $more,
             'mt_allow_comments'      => intval($page->allowComment),
             'mt_allow_pings'         => intval($page->allowPing),
@@ -225,7 +240,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                     throw new Exception(_t('权限不足'), 403);
                 }
             } else {
-                throw new Exception(_t('无法登录, 密码错误'), 403);
+                throw new Exception(_t('无法登陆, 密码错误'), 403);
             }
         }
     }
@@ -272,7 +287,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                 'link'                   => $pages->permalink,
                 'permaLink'              => $pages->permalink,
                 'categories'             => $pages->categories,
-                'excerpt'                => $pages->plainExcerpt,
+                'excerpt'                => $pages->description,
                 'text_more'              => $more,
                 'mt_allow_comments'      => intval($pages->allowComment),
                 'mt_allow_pings'         => intval($pages->allowPing),
@@ -339,7 +354,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
 
         $input['text'] = !empty($content['mt_text_more']) ? $content['description']
             . "\n<!--more-->\n" . $content['mt_text_more'] : $content['description'];
-        $input['text'] = self::pluginHandle()->call('textFilter', $input['text'], $this);
+        $input['text'] = self::pluginHandle()->textFilter($input['text'], $this);
 
         $input['password'] = $content["wp_password"] ?? null;
         $input['order'] = $content["wp_page_order"] ?? null;
@@ -407,16 +422,17 @@ class XmlRpc extends Contents implements ActionInterface, Hook
         }
 
         /** 对未归档附件进行归档 */
-        $unattached = Unattached::alloc();
+        $unattached = $this->db->fetchAll($this->select()->where('table.contents.type = ? AND
+        (table.contents.parent = 0 OR table.contents.parent IS NULL)', 'attachment'), [$this, 'filter']);
 
-        if ($unattached->have()) {
-            while ($unattached->next()) {
-                if (false !== strpos($input['text'], $unattached->attachment->url)) {
+        if (!empty($unattached)) {
+            foreach ($unattached as $attach) {
+                if (false !== strpos($input['text'], $attach['attachment']->url)) {
                     if (!isset($input['attachment'])) {
                         $input['attachment'] = [];
                     }
 
-                    $input['attachment'][] = $unattached->cid;
+                    $input['attachment'][] = $attach['cid'];
                 }
             }
         }
@@ -449,9 +465,9 @@ class XmlRpc extends Contents implements ActionInterface, Hook
     {
         /** 开始接受数据 */
         $input['name'] = $category['name'];
-        $input['slug'] = Common::slugName(Common::strBy($category['slug'] ?? null, $category['name']));
+        $input['slug'] = Common::slugName(empty($category['slug']) ? $category['name'] : $category['slug']);
         $input['parent'] = $category['parent_id'] ?? ($category['parent'] ?? 0);
-        $input['description'] = Common::strBy($category['description'] ?? null, $category['name']);
+        $input['description'] = $category['description'] ?? $category['name'];
 
         /** 调用已有组件 */
         $categoryWidget = CategoryEdit::alloc(null, $input, function (CategoryEdit $category) {
@@ -547,10 +563,10 @@ class XmlRpc extends Contents implements ActionInterface, Hook
             $attachment['title'] = $content['post_title'];
             $attachment['slug'] = $content['post_excerpt'];
 
-            $text = json_decode($post->text, true);
+            $text = unserialize($post->text);
             $text['description'] = $content['description'];
 
-            $attachment['text'] = json_encode($text);
+            $attachment['text'] = serialize($text);
 
             /** 更新数据 */
             $updateRows = $this->update($attachment, $this->db->sql()->where('cid = ?', $postId));
@@ -576,7 +592,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
         while ($pages->next()) {
             $pageStructs[] = [
                 'dateCreated'      => new Date($this->options->timezone + $pages->created),
-                'date_created_gmt' => new Date($pages->created),
+                'date_created_gmt' => new Date($this->options->timezone + $pages->created),
                 'page_id'          => $pages->cid,
                 'page_title'       => $pages->title,
                 'page_parent_id'   => '0',
@@ -635,28 +651,26 @@ class XmlRpc extends Contents implements ActionInterface, Hook
         /** 构造出查询语句并且查询*/
         $key = Common::filterSearchQuery($category);
         $key = '%' . $key . '%';
-        $select = $this->db->select()
-            ->from('table.metas')
-            ->where(
-                'table.metas.type = ? AND (table.metas.name LIKE ? OR slug LIKE ?)',
-                'category',
-                $key,
-                $key
-            );
+        $select = Metas::alloc()->select()->where(
+            'table.metas.type = ? AND (table.metas.name LIKE ? OR slug LIKE ?)',
+            'category',
+            $key,
+            $key
+        );
 
         if ($maxResults > 0) {
             $select->limit($maxResults);
         }
 
         /** 不要category push到contents的容器中 */
-        $categories = MetasFrom::alloc(['query' => $select]);
+        $categories = $this->db->fetchAll($select);
 
         /** 初始化categorise数组*/
         $categoryStructs = [];
-        while ($categories->next()) {
+        foreach ($categories as $category) {
             $categoryStructs[] = [
-                'category_id'   => $categories->mid,
-                'category_name' => $categories->name,
+                'category_id'   => $category['mid'],
+                'category_name' => $category['name'],
             ];
         }
 
@@ -945,7 +959,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
         }
 
         return [
-            'date_created_gmt' => new Date($comment->created),
+            'date_created_gmt' => new Date($this->options->timezone + $comment->created),
             'user_id'          => $comment->authorId,
             'comment_id'       => $comment->coid,
             'parent'           => $comment->parent,
@@ -999,7 +1013,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
 
         while ($comments->next()) {
             $commentsStruct[] = [
-                'date_created_gmt' => new Date($comments->created),
+                'date_created_gmt' => new Date($this->options->timezone + $comments->created),
                 'user_id'          => $comments->authorId,
                 'comment_id'       => $comments->coid,
                 'parent'           => $comments->parent,
@@ -1174,7 +1188,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
         while ($attachments->next()) {
             $attachmentsStruct[] = [
                 'attachment_id'    => $attachments->cid,
-                'date_created_gmt' => new Date($attachments->created),
+                'date_created_gmt' => new Date($this->options->timezone + $attachments->created),
                 'parent'           => $attachments->parent,
                 'link'             => $attachments->attachment->url,
                 'title'            => $attachments->title,
@@ -1205,7 +1219,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
 
         return [
             'attachment_id'    => $attachment->cid,
-            'date_created_gmt' => new Date($attachment->created),
+            'date_created_gmt' => new Date($this->options->timezone + $attachment->created),
             'parent'           => $attachment->parent,
             'link'             => $attachment->attachment->url,
             'title'            => $attachment->title,
@@ -1246,7 +1260,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
             'link'                   => $post->permalink,
             'permaLink'              => $post->permalink,
             'categories'             => $categories,
-            'mt_excerpt'             => $post->plainExcerpt,
+            'mt_excerpt'             => $post->description,
             'mt_text_more'           => $more,
             'mt_allow_comments'      => intval($post->allowComment),
             'mt_allow_pings'         => intval($post->allowPing),
@@ -1296,7 +1310,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                 'link'                   => $posts->permalink,
                 'permaLink'              => $posts->permalink,
                 'categories'             => $categories,
-                'mt_excerpt'             => $posts->plainExcerpt,
+                'mt_excerpt'             => $posts->description,
                 'mt_text_more'           => $more,
                 'wp_more_text'           => $more,
                 'mt_allow_comments'      => intval($posts->allowComment),
@@ -1376,7 +1390,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                 'slug'         => $result['name'],
                 'type'         => 'attachment',
                 'status'       => 'publish',
-                'text'         => json_encode($result),
+                'text'         => serialize($result),
                 'allowComment' => 1,
                 'allowPing'    => 0,
                 'allowFeed'    => 1
@@ -1386,7 +1400,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                 ->where('table.contents.type = ?', 'attachment'), [$this, 'push']);
 
             /** 增加插件接口 */
-            self::pluginHandle()->call('upload', $this);
+            self::pluginHandle()->upload($this);
 
             return [
                 'file' => $this->attachment->name,
@@ -1417,7 +1431,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                 'userid'           => $posts->authorId,
                 'postid'           => $posts->cid,
                 'title'            => $posts->title,
-                'date_created_gmt' => new Date($posts->created)
+                'date_created_gmt' => new Date($this->options->timezone + $posts->created)
             ];
         }
 
@@ -1719,13 +1733,13 @@ class XmlRpc extends Contents implements ActionInterface, Hook
                         ];
 
                         /** 加入plugin */
-                        $pingback = self::pluginHandle()->call('pingback', $pingback, $post);
+                        $pingback = self::pluginHandle()->pingback($pingback, $post);
 
                         /** 执行插入*/
                         $insertId = Comments::alloc()->insert($pingback);
 
                         /** 评论完成接口 */
-                        self::pluginHandle()->call('finishPingback', $this);
+                        self::pluginHandle()->finishPingback($this);
 
                         return $insertId;
                     } catch (WidgetException $e) {
@@ -1760,7 +1774,7 @@ class XmlRpc extends Contents implements ActionInterface, Hook
 <rsd version="1.0" xmlns="http://archipelago.phrasewise.com/rsd">
     <service>
         <engineName>Typecho</engineName>
-        <engineLink>https://typecho.org/</engineLink>
+        <engineLink>http://www.typecho.org/</engineLink>
         <homePageLink>{$this->options->siteUrl}</homePageLink>
         <apis>
             <api name="WordPress" blogID="1" preferred="true" apiLink="{$this->options->xmlRpcUrl}" />

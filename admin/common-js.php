@@ -133,6 +133,10 @@
                         .attr('rel', 'noopener noreferrer');
                 });
             }
+
+            $('.main form').submit(function () {
+                $('button[type=submit]', this).attr('disabled', 'disabled');
+            });
         });
     })();
 </script>

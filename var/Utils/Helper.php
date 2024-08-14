@@ -75,9 +75,9 @@ class Helper
      * @param $method
      * @param $params
      */
-    public static function requestService($method, ... $params)
+    public static function requestService($method, $params)
     {
-        Service::alloc()->requestService($method, ... $params);
+        Service::alloc()->requestService($method, $params);
     }
 
     /**
@@ -118,7 +118,9 @@ class Helper
 
         try {
             Plugin::deactivate($pluginName);
-            self::setOption('plugins', Plugin::export());
+            $db->query($db->update('table.options')
+                ->rows(['value' => serialize(Plugin::export())])
+                ->where('name = ?', 'plugins'));
         } catch (Plugin\Exception $e) {
             //nothing to do
         }
@@ -141,32 +143,6 @@ class Helper
                 I18n::addLang($fileName);
             }
         }
-    }
-
-    /**
-     * 获取Options对象
-     *
-     * @return Options
-     */
-    public static function options(): Options
-    {
-        return Options::alloc();
-    }
-
-    /**
-     * @param string $name
-     * @param $value
-     * @return int
-     */
-    public static function setOption(string $name, $value): int
-    {
-        $options = self::options();
-        $options->{$name} = $value;
-
-        return BaseOptions::alloc()->update(
-            ['value' => is_array($value) ? json_encode($value) : $value],
-            Db::get()->sql()->where('name = ?', $name)
-        );
     }
 
     /**
@@ -210,8 +186,22 @@ class Helper
                 'action' => $action
             ]
         ], $next);
+        self::options()->routingTable = $routingTable;
 
-        return self::setOption('routingTable', $routingTable);
+        return BaseOptions::alloc()->update(
+            ['value' => serialize($routingTable)],
+            Db::get()->sql()->where('name = ?', 'routingTable')
+        );
+    }
+
+    /**
+     * 获取Options对象
+     *
+     * @return Options
+     */
+    public static function options(): Options
+    {
+        return Options::alloc();
     }
 
     /**
@@ -228,7 +218,13 @@ class Helper
         }
 
         unset($routingTable[$name]);
-        return self::setOption('routingTable', $routingTable);
+        self::options()->routingTable = $routingTable;
+
+        $db = Db::get();
+        return BaseOptions::alloc()->update(
+            ['value' => serialize($routingTable)],
+            $db->sql()->where('name = ?', 'routingTable')
+        );
     }
 
     /**
@@ -240,11 +236,14 @@ class Helper
      */
     public static function addAction(string $actionName, string $widgetName): int
     {
-        $actionTable = self::options()->actionTable;
+        $actionTable = unserialize(self::options()->actionTable);
         $actionTable = empty($actionTable) ? [] : $actionTable;
         $actionTable[$actionName] = $widgetName;
 
-        return self::setOption('actionTable', $actionTable);
+        return BaseOptions::alloc()->update(
+            ['value' => (self::options()->actionTable = serialize($actionTable))],
+            Db::get()->sql()->where('name = ?', 'actionTable')
+        );
     }
 
     /**
@@ -255,7 +254,7 @@ class Helper
      */
     public static function removeAction(string $actionName): int
     {
-        $actionTable = self::options()->actionTable;
+        $actionTable = unserialize(self::options()->actionTable);
         $actionTable = empty($actionTable) ? [] : $actionTable;
 
         if (isset($actionTable[$actionName])) {
@@ -263,7 +262,10 @@ class Helper
             reset($actionTable);
         }
 
-        return self::setOption('actionTable', $actionTable);
+        return BaseOptions::alloc()->update(
+            ['value' => (self::options()->actionTable = serialize($actionTable))],
+            Db::get()->sql()->where('name = ?', 'actionTable')
+        );
     }
 
     /**
@@ -274,11 +276,14 @@ class Helper
      */
     public static function addMenu(string $menuName): int
     {
-        $panelTable = self::options()->panelTable;
+        $panelTable = unserialize(self::options()->panelTable);
         $panelTable['parent'] = empty($panelTable['parent']) ? [] : $panelTable['parent'];
         $panelTable['parent'][] = $menuName;
 
-        self::setOption('panelTable', $panelTable);
+        BaseOptions::alloc()->update(
+            ['value' => (self::options()->panelTable = serialize($panelTable))],
+            Db::get()->sql()->where('name = ?', 'panelTable')
+        );
 
         end($panelTable['parent']);
         return key($panelTable['parent']) + 10;
@@ -292,14 +297,17 @@ class Helper
      */
     public static function removeMenu(string $menuName): int
     {
-        $panelTable = self::options()->panelTable;
+        $panelTable = unserialize(self::options()->panelTable);
         $panelTable['parent'] = empty($panelTable['parent']) ? [] : $panelTable['parent'];
 
         if (false !== ($index = array_search($menuName, $panelTable['parent']))) {
             unset($panelTable['parent'][$index]);
         }
 
-        self::setOption('panelTable', $panelTable);
+        BaseOptions::alloc()->update(
+            ['value' => (self::options()->panelTable = serialize($panelTable))],
+            Db::get()->sql()->where('name = ?', 'panelTable')
+        );
 
         return $index + 10;
     }
@@ -325,7 +333,7 @@ class Helper
         bool $hidden = false,
         string $addLink = ''
     ): int {
-        $panelTable = self::options()->panelTable;
+        $panelTable = unserialize(self::options()->panelTable);
         $panelTable['child'] = empty($panelTable['child']) ? [] : $panelTable['child'];
         $panelTable['child'][$index] = empty($panelTable['child'][$index]) ? [] : $panelTable['child'][$index];
         $fileName = urlencode(trim($fileName, '/'));
@@ -336,7 +344,10 @@ class Helper
         $panelTable['file'][] = $fileName;
         $panelTable['file'] = array_unique($panelTable['file']);
 
-        self::setOption('panelTable', $panelTable);
+        BaseOptions::alloc()->update(
+            ['value' => (self::options()->panelTable = serialize($panelTable))],
+            Db::get()->sql()->where('name = ?', 'panelTable')
+        );
 
         end($panelTable['child'][$index]);
         return key($panelTable['child'][$index]);
@@ -351,7 +362,7 @@ class Helper
      */
     public static function removePanel(int $index, string $fileName): int
     {
-        $panelTable = self::options()->panelTable;
+        $panelTable = unserialize(self::options()->panelTable);
         $panelTable['child'] = empty($panelTable['child']) ? [] : $panelTable['child'];
         $panelTable['child'][$index] = empty($panelTable['child'][$index]) ? [] : $panelTable['child'][$index];
         $panelTable['file'] = empty($panelTable['file']) ? [] : $panelTable['file'];
@@ -369,7 +380,10 @@ class Helper
             }
         }
 
-        self::setOption('panelTable', $panelTable);
+        BaseOptions::alloc()->update(
+            ['value' => (self::options()->panelTable = serialize($panelTable))],
+            Db::get()->sql()->where('name = ?', 'panelTable')
+        );
         return $return;
     }
 

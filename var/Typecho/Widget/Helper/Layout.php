@@ -18,7 +18,7 @@ class Layout
      * @access private
      * @var array
      */
-    private array $items = [];
+    private $items = [];
 
     /**
      * 表单属性列表
@@ -26,7 +26,7 @@ class Layout
      * @access private
      * @var array
      */
-    private array $attributes = [];
+    private $attributes = [];
 
     /**
      * 标签名称
@@ -34,7 +34,7 @@ class Layout
      * @access private
      * @var string
      */
-    private string $tagName = 'div';
+    private $tagName = 'div';
 
     /**
      * 是否自闭合
@@ -42,15 +42,15 @@ class Layout
      * @access private
      * @var boolean
      */
-    private bool $close = false;
+    private $close = false;
 
     /**
      * 是否强制自闭合
      *
      * @access private
-     * @var boolean|null
+     * @var boolean
      */
-    private ?bool $forceClose = null;
+    private $forceClose = null;
 
     /**
      * 内部数据
@@ -58,7 +58,7 @@ class Layout
      * @access private
      * @var string
      */
-    private string $html;
+    private $html;
 
     /**
      * 父节点

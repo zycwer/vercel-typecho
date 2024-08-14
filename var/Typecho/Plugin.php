@@ -19,28 +19,28 @@ class Plugin
      *
      * @var array
      */
-    private static array $plugin = [];
+    private static $plugin = [];
 
     /**
      * 实例化的插件对象
      *
      * @var array
      */
-    private static array $instances;
+    private static $instances;
 
     /**
      * 临时存储变量
      *
      * @var array
      */
-    private static array $tmp = [];
+    private static $tmp = [];
 
     /**
      * 唯一句柄
      *
      * @var string
      */
-    private string $handle;
+    private $handle;
 
     /**
      * 组件
@@ -54,7 +54,7 @@ class Plugin
      *
      * @var boolean
      */
-    private bool $signal = false;
+    private $signal;
 
     /**
      * 插件初始化
@@ -207,7 +207,7 @@ class Plugin
 
                 /** 分行读取 */
                 $described = false;
-                $lines = preg_split("([\r\n])", $token[1]);
+                $lines = preg_split("(\r|\n)", $token[1]);
                 foreach ($lines as $line) {
                     $line = trim($line);
                     if (!empty($line) && '*' == $line[0]) {
@@ -352,9 +352,9 @@ class Plugin
      * 判断插件是否存在
      *
      * @param string $pluginName 插件名称
-     * @return bool
+     * @return mixed
      */
-    public static function exists(string $pluginName): bool
+    public static function exists(string $pluginName)
     {
         return array_key_exists($pluginName, self::$plugin['activated']);
     }
@@ -433,7 +433,7 @@ class Plugin
      * @param array $args 参数
      * @return mixed
      */
-    public function call(string $component, ...$args)
+    public function __call(string $component, array $args)
     {
         $component = $this->handle . ':' . $component;
         $last = count($args);
@@ -448,16 +448,5 @@ class Plugin
         }
 
         return $args[$last];
-    }
-
-    /**
-     * @deprecated ^1.3.0
-     * @param string $component
-     * @param array $args
-     * @return false|mixed|null
-     */
-    public function __call(string $component, array $args)
-    {
-        return $this->call($component, ... $args);
     }
 }

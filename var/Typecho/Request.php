@@ -15,7 +15,7 @@ class Request
      * @access private
      * @var Request
      */
-    private static Request $instance;
+    private static $instance;
 
     /**
      * 沙箱参数
@@ -23,7 +23,7 @@ class Request
      * @access private
      * @var Config|null
      */
-    private ?Config $sandbox;
+    private $sandbox;
 
     /**
      * 用户参数
@@ -31,54 +31,54 @@ class Request
      * @access private
      * @var Config|null
      */
-    private ?Config $params;
+    private $params;
 
     /**
      * 路径信息
      *
      * @access private
-     * @var string|null
+     * @var string
      */
-    private ?string $pathInfo = null;
+    private $pathInfo = null;
 
     /**
      * requestUri
      *
-     * @var string|null
+     * @var string
      * @access private
      */
-    private ?string $requestUri = null;
+    private $requestUri = null;
 
     /**
      * requestRoot
      *
-     * @var string|null
+     * @var mixed
      * @access private
      */
-    private ?string $requestRoot = null;
+    private $requestRoot = null;
 
     /**
      * 获取baseurl
      *
-     * @var string|null
+     * @var string
      * @access private
      */
-    private ?string $baseUrl = null;
+    private $baseUrl = null;
 
     /**
      * 客户端ip地址
      *
      * @access private
-     * @var string|null
+     * @var string
      */
-    private ?string $ip = null;
+    private $ip = null;
 
     /**
      * 域名前缀
      *
-     * @var string|null
+     * @var string
      */
-    private ?string $urlPrefix = null;
+    private $urlPrefix = null;
 
     /**
      * 获取单例句柄
@@ -126,18 +126,6 @@ class Request
     }
 
     /**
-     * @return $this
-     */
-    public function endProxy(): Request
-    {
-        if (isset($this->params)) {
-            $this->params = null;
-        }
-
-        return $this;
-    }
-
-    /**
      * 获取实际传递参数
      *
      * @param string $key 指定参数
@@ -147,6 +135,7 @@ class Request
      */
     public function get(string $key, $default = null, ?bool &$exists = true)
     {
+        $exists = true;
         $value = null;
 
         switch (true) {
@@ -156,13 +145,17 @@ class Request
             case isset($this->sandbox):
                 if (isset($this->sandbox[$key])) {
                     $value = $this->sandbox[$key];
+                } else {
+                    $exists = false;
                 }
                 break;
             case $key === '@json':
+                $exists = false;
                 if ($this->isJson()) {
                     $body = file_get_contents('php://input');
 
                     if (false !== $body) {
+                        $exists = true;
                         $value = json_decode($body, true, 16);
                         $default = $default ?? $value;
                     }
@@ -175,18 +168,18 @@ class Request
                 $value = $_POST[$key];
                 break;
             default:
+                $exists = false;
                 break;
         }
 
-        if (isset($value) && $value !== '') {
-            $exists = true;
-            if (is_array($default) == is_array($value)) {
-                return $value;
-            } else {
-                return $default;
-            }
+        // reset params
+        if (isset($this->params)) {
+            $this->params = null;
+        }
+
+        if (isset($value)) {
+            return is_array($default) == is_array($value) ? $value : $default;
         } else {
-            $exists = false;
             return $default;
         }
     }
@@ -194,7 +187,6 @@ class Request
     /**
      * 获取实际传递参数(magic)
      *
-     * @deprecated ^1.3.0
      * @param string $key 指定参数
      * @return mixed
      */
@@ -206,7 +198,6 @@ class Request
     /**
      * 判断参数是否存在
      *
-     * @deprecated ^1.3.0
      * @param string $key 指定参数
      * @return boolean
      */
@@ -361,16 +352,6 @@ class Request
     }
 
     /**
-     * 获取请求的内容类型
-     *
-     * @return string|null
-     */
-    public function getContentType(): ?string
-    {
-        return $this->getHeader('Content-Type');
-    }
-
-    /**
      * 获取环境变量
      *
      * @param string $name 获取环境变量名
@@ -417,14 +398,8 @@ class Request
      */
     public function getHeader(string $key, ?string $default = null): ?string
     {
-        $key = strtoupper(str_replace('-', '_', $key));
-        
-        // Content-Type 和 Content-Length 这两个 header 还需要从不带 HTTP_ 的 key 尝试获取
-        if (in_array($key, ['CONTENT_TYPE', 'CONTENT_LENGTH'])) {
-            $default = $this->getServer($key, $default);
-        }
-
-        return $this->getServer('HTTP_' . $key, $default);
+        $key = 'HTTP_' . strtoupper(str_replace('-', '_', $key));
+        return $this->getServer($key, $default);
     }
 
     /**
@@ -517,10 +492,7 @@ class Request
      */
     public function isJson(): bool
     {
-        return !!preg_match(
-            "/^\s*application\/json(;|$)/i",
-            $this->getContentType() ?? ''
-        );
+        return !!preg_match("/^\s*application\/json(;|$)/i", $this->getHeader('Content-Type', ''));
     }
 
     /**

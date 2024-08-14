@@ -84,7 +84,6 @@ $backupFiles = \Widget\Backup::alloc()->listFiles();
 <?php
 include 'copyright.php';
 include 'common-js.php';
-include 'form-js.php';
 ?>
 <script>
     $('#backup-secondary .typecho-option-tabs li').click(function() {

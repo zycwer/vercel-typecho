@@ -2,6 +2,7 @@
 
 namespace Widget\Plugins;
 
+use Typecho\Common;
 use Typecho\Plugin;
 use Typecho\Widget;
 
@@ -26,7 +27,7 @@ class Rows extends Widget
      * @access public
      * @var array
      */
-    public array $activatedPlugins = [];
+    public $activatedPlugins = [];
 
     /**
      * 执行函数
@@ -88,9 +89,10 @@ class Rows extends Widget
 
     /**
      * @param string $plugin
+     * @param string $index
      * @return array|null
      */
-    protected function getPlugin(string $plugin): ?array
+    protected function getPlugin(string $plugin, string $index): ?array
     {
         if (is_dir($plugin)) {
             /** 获取插件名称 */

@@ -7,19 +7,19 @@ use Typecho\Config;
 use Typecho\Cookie;
 use Typecho\Db;
 use Typecho\Db\Query;
+use Typecho\Feed;
 use Typecho\Router;
 use Typecho\Widget\Exception as WidgetException;
+use Typecho\Widget\Helper\PageNavigator;
 use Typecho\Widget\Helper\PageNavigator\Classic;
 use Typecho\Widget\Helper\PageNavigator\Box;
 use Widget\Base\Contents;
+use Widget\Base\Metas;
 use Widget\Comments\Ping;
-use Widget\Contents\Attachment\Related as AttachmentRelated;
-use Widget\Contents\Related\Author as AuthorRelated;
-use Widget\Contents\From as ContentsFrom;
-use Widget\Contents\Related as ContentsRelated;
-use Widget\Metas\From as MetasFrom;
-use Widget\Contents\Page\Rows as PageRows;
-use Widget\Users\Author;
+use Widget\Comments\Recent;
+use Widget\Contents\Attachment\Related;
+use Widget\Contents\Related\Author;
+use Widget\Metas\Category\Rows;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
@@ -39,119 +39,147 @@ class Archive extends Contents
      *
      * @var string
      */
-    private string $themeFile;
+    private $themeFile;
 
     /**
      * 风格目录
      *
      * @var string
      */
-    private string $themeDir;
+    private $themeDir;
 
     /**
      * 分页计算对象
      *
      * @var Query
      */
-    private Query $countSql;
+    private $countSql;
 
     /**
      * 所有文章个数
      *
-     * @var int|null
+     * @var integer
      */
-    private ?int $total = null;
+    private $total = false;
 
     /**
      * 标记是否为从外部调用
      *
      * @var boolean
      */
-    private bool $invokeFromOutside = false;
+    private $invokeFromOutside = false;
 
     /**
      * 是否由聚合调用
      *
      * @var boolean
      */
-    private bool $invokeByFeed = false;
+    private $invokeByFeed = false;
 
     /**
      * 当前页
      *
      * @var integer
      */
-    private int $currentPage;
+    private $currentPage;
 
     /**
      * 生成分页的内容
      *
-     * @var Router\ParamsDelegateInterface
+     * @var array
      */
-    private Router\ParamsDelegateInterface $pageRow;
+    private $pageRow = [];
+
+    /**
+     * 聚合器对象
+     *
+     * @var Feed
+     */
+    private $feed;
 
     /**
      * RSS 2.0聚合地址
      *
      * @var string
      */
-    private string $archiveFeedUrl;
+    private $feedUrl;
 
     /**
      * RSS 1.0聚合地址
      *
      * @var string
      */
-    private string $archiveFeedRssUrl;
+    private $feedRssUrl;
 
     /**
      * ATOM 聚合地址
      *
      * @var string
      */
-    private string $archiveFeedAtomUrl;
+    private $feedAtomUrl;
 
     /**
      * 本页关键字
      *
-     * @var string|null
+     * @var string
      */
-    private ?string $archiveKeywords = null;
+    private $keywords;
 
     /**
      * 本页描述
      *
-     * @var string|null
+     * @var string
      */
-    private ?string $archiveDescription = null;
+    private $description;
+
+    /**
+     * 聚合类型
+     *
+     * @var string
+     */
+    private $feedType;
+
+    /**
+     * 聚合类型
+     *
+     * @var string
+     */
+    private $feedContentType;
+
+    /**
+     * 当前feed地址
+     *
+     * @var string
+     */
+    private $currentFeedUrl;
 
     /**
      * 归档标题
      *
-     * @var string|null
+     * @var string
      */
-    private ?string $archiveTitle = null;
+    private $archiveTitle = null;
 
     /**
      * 归档地址
      *
      * @var string|null
      */
-    private ?string $archiveUrl = null;
+    private $archiveUrl = null;
 
     /**
      * 归档类型
      *
      * @var string
      */
-    private string $archiveType = 'index';
+    private $archiveType = 'index';
 
     /**
      * 是否为单一归档
      *
-     * @var boolean
+     * @var string
      */
-    private bool $archiveSingle = false;
+    private $archiveSingle = false;
 
     /**
      * 是否为自定义首页, 主要为了标记自定义首页的情况
@@ -161,7 +189,7 @@ class Archive extends Contents
      * @var boolean
      * @access private
      */
-    private bool $makeSinglePageAsFrontPage = false;
+    private $makeSinglePageAsFrontPage = false;
 
     /**
      * 归档缩略名
@@ -169,7 +197,15 @@ class Archive extends Contents
      * @access private
      * @var string
      */
-    private string $archiveSlug;
+    private $archiveSlug;
+
+    /**
+     * 设置分页对象
+     *
+     * @access private
+     * @var PageNavigator
+     */
+    private $pageNav;
 
     /**
      * @param Config $parameter
@@ -181,16 +217,11 @@ class Archive extends Contents
             'pageSize'       => $this->options->pageSize,
             'type'           => null,
             'checkPermalink' => true,
-            'preview'        => false,
-            'commentPage'    => 0
+            'preview'        => false
         ]);
 
         /** 用于判断是路由调用还是外部调用 */
         if (null == $parameter->type) {
-            if (!isset(Router::$current)) {
-                throw new WidgetException('Archive type is not set', 500);
-            }
-
             $parameter->type = Router::$current;
         } else {
             $this->invokeFromOutside = true;
@@ -203,6 +234,59 @@ class Archive extends Contents
 
         /** 初始化皮肤路径 */
         $this->themeDir = rtrim($this->options->themeFile($this->options->theme), '/') . '/';
+
+        /** 处理feed模式 **/
+        if ('feed' == $parameter->type) {
+            $this->currentFeedUrl = '';
+
+            /** 判断聚合类型 */
+            switch (true) {
+                case 0 === strpos($this->request->feed, '/rss/') || '/rss' == $this->request->feed:
+                    /** 如果是RSS1标准 */
+                    $this->request->feed = substr($this->request->feed, 4);
+                    $this->feedType = Feed::RSS1;
+                    $this->currentFeedUrl = $this->options->feedRssUrl;
+                    $this->feedContentType = 'application/rdf+xml';
+                    break;
+                case 0 === strpos($this->request->feed, '/atom/') || '/atom' == $this->request->feed:
+                    /** 如果是ATOM标准 */
+                    $this->request->feed = substr($this->request->feed, 5);
+                    $this->feedType = Feed::ATOM1;
+                    $this->currentFeedUrl = $this->options->feedAtomUrl;
+                    $this->feedContentType = 'application/atom+xml';
+                    break;
+                default:
+                    $this->feedType = Feed::RSS2;
+                    $this->currentFeedUrl = $this->options->feedUrl;
+                    $this->feedContentType = 'application/rss+xml';
+                    break;
+            }
+
+            $feedQuery = $this->request->feed;
+            //$parameter->type = Router::$current;
+            //$this->request->setParams($params);
+
+            if ('/comments/' == $feedQuery || '/comments' == $feedQuery) {
+                /** 专为feed使用的hack */
+                $parameter->type = 'comments';
+                $this->options->feedUrl = $this->options->commentsFeedUrl;
+                $this->options->feedRssUrl = $this->options->commentsFeedRssUrl;
+                $this->options->feedAtomUrl = $this->options->commentsFeedAtomUrl;
+            } else {
+                $matched = Router::match($this->request->feed, 'pageSize=10&isFeed=1');
+                if ($matched instanceof Archive) {
+                    $this->import($matched);
+                } else {
+                    throw new WidgetException(_t('聚合页不存在'), 404);
+                }
+            }
+
+            /** 初始化聚合器 */
+            $this->setFeed(new Feed(Common::VERSION, $this->feedType, $this->options->charset, _t('zh-CN')));
+
+            /** 默认输出10则文章 **/
+            $parameter->pageSize = 10;
+        }
     }
 
     /**
@@ -233,6 +317,24 @@ class Archive extends Contents
     }
 
     /**
+     * 获取分页对象
+     * @return array
+     */
+    public function getPageRow(): array
+    {
+        return $this->pageRow;
+    }
+
+    /**
+     * 设置分页对象
+     * @param array $pageRow
+     */
+    public function setPageRow(array $pageRow)
+    {
+        $this->pageRow = $pageRow;
+    }
+
+    /**
      * @return string|null
      */
     public function getArchiveSlug(): ?string
@@ -246,6 +348,22 @@ class Archive extends Contents
     public function setArchiveSlug(string $archiveSlug)
     {
         $this->archiveSlug = $archiveSlug;
+    }
+
+    /**
+     * @return string|null
+     */
+    public function getArchiveSingle(): ?string
+    {
+        return $this->archiveSingle;
+    }
+
+    /**
+     * @param string $archiveSingle the $archiveSingle to set
+     */
+    public function setArchiveSingle(string $archiveSingle)
+    {
+        $this->archiveSingle = $archiveSingle;
     }
 
     /**
@@ -283,104 +401,113 @@ class Archive extends Contents
     /**
      * @return string|null
      */
-    public function getArchiveDescription(): ?string
+    public function getFeedType(): ?string
     {
-        return $this->archiveDescription;
+        return $this->feedType;
     }
 
     /**
-     * @param string $archiveDescription the $description to set
+     * @param string $feedType the $feedType to set
      */
-    public function setArchiveDescription(string $archiveDescription)
+    public function setFeedType(string $feedType)
     {
-        $this->archiveDescription = $archiveDescription;
+        $this->feedType = $feedType;
     }
 
     /**
      * @return string|null
      */
-    public function getArchiveKeywords(): ?string
+    public function getDescription(): ?string
     {
-        return $this->archiveKeywords;
+        return $this->description;
     }
 
     /**
-     * @param string $archiveKeywords the $keywords to set
+     * @param string $description the $description to set
      */
-    public function setArchiveKeywords(string $archiveKeywords)
+    public function setDescription(string $description)
     {
-        $this->archiveKeywords = $archiveKeywords;
+        $this->description = $description;
     }
 
     /**
-     * @return string
+     * @return string|null
      */
-    public function getArchiveFeedAtomUrl(): string
+    public function getKeywords(): ?string
     {
-        return $this->archiveFeedAtomUrl;
+        return $this->keywords;
     }
 
     /**
-     * @param string $archiveFeedAtomUrl the $feedAtomUrl to set
+     * @param string $keywords the $keywords to set
      */
-    public function setArchiveFeedAtomUrl(string $archiveFeedAtomUrl)
+    public function setKeywords(string $keywords)
     {
-        $this->archiveFeedAtomUrl = $archiveFeedAtomUrl;
-    }
-
-    /**
-     * @return string
-     */
-    public function getArchiveFeedRssUrl(): string
-    {
-        return $this->archiveFeedRssUrl;
-    }
-
-    /**
-     * @param string $archiveFeedRssUrl the $feedRssUrl to set
-     */
-    public function setArchiveFeedRssUrl(string $archiveFeedRssUrl)
-    {
-        $this->archiveFeedRssUrl = $archiveFeedRssUrl;
+        $this->keywords = $keywords;
     }
 
     /**
      * @return string
      */
-    public function getArchiveFeedUrl(): string
+    public function getFeedAtomUrl(): string
     {
-        return $this->archiveFeedUrl;
+        return $this->feedAtomUrl;
     }
 
     /**
-     * @param string $archiveFeedUrl the $feedUrl to set
+     * @param string $feedAtomUrl the $feedAtomUrl to set
      */
-    public function setArchiveFeedUrl(string $archiveFeedUrl)
+    public function setFeedAtomUrl(string $feedAtomUrl)
     {
-        $this->archiveFeedUrl = $archiveFeedUrl;
+        $this->feedAtomUrl = $feedAtomUrl;
     }
 
     /**
-     * Get the value of feed
-     * Deprecated since 1.3.0
-     *
-     * @deprecated 1.3.0
-     * @return null
+     * @return string
      */
-    public function getFeed()
+    public function getFeedRssUrl(): string
     {
-        return null;
+        return $this->feedRssUrl;
     }
 
     /**
-     * Set the value of feed
-     * Deprecated since 1.3.0
-     *
-     * @deprecated 1.3.0
-     * @param null $feed
+     * @param string $feedRssUrl the $feedRssUrl to set
      */
-    public function setFeed($feed)
+    public function setFeedRssUrl(string $feedRssUrl)
     {
+        $this->feedRssUrl = $feedRssUrl;
+    }
+
+    /**
+     * @return string
+     */
+    public function getFeedUrl(): string
+    {
+        return $this->feedUrl;
+    }
+
+    /**
+     * @param string $feedUrl the $feedUrl to set
+     */
+    public function setFeedUrl(string $feedUrl)
+    {
+        $this->feedUrl = $feedUrl;
+    }
+
+    /**
+     * @return Feed
+     */
+    public function getFeed(): Feed
+    {
+        return $this->feed;
+    }
+
+    /**
+     * @param Feed $feed the $feed to set
+     */
+    public function setFeed(Feed $feed)
+    {
+        $this->feed = $feed;
     }
 
     /**
@@ -433,7 +560,7 @@ class Archive extends Contents
      */
     public function getTotal(): int
     {
-        if (!isset($this->total)) {
+        if (false === $this->total) {
             $this->total = $this->size($this->countSql);
         }
 
@@ -500,6 +627,7 @@ class Archive extends Contents
             'page'               => 'singleHandle',
             'post'               => 'singleHandle',
             'attachment'         => 'singleHandle',
+            'comment_page'       => 'singleHandle',
             'category'           => 'categoryHandle',
             'category_page'      => 'categoryHandle',
             'tag'                => 'tagHandle',
@@ -517,7 +645,7 @@ class Archive extends Contents
         ];
 
         /** 处理搜索结果跳转 */
-        if ($this->request->is('s')) {
+        if (isset($this->request->s)) {
             $filterKeywords = $this->request->filter('search')->get('s');
 
             /** 跳转到搜索页 */
@@ -551,27 +679,20 @@ class Archive extends Contents
         }
 
         /** 初始化分页变量 */
-        $this->currentPage = $this->request->filter('int')->get('page', 1);
+        $this->currentPage = $this->request->filter('int')->page ?? 1;
         $hasPushed = false;
-        $this->pageRow = new class implements Router\ParamsDelegateInterface
-        {
-            public function getRouterParam(string $key): string
-            {
-                return '{' . $key . '}';
-            }
-        };
 
         /** select初始化 */
-        $select = self::pluginHandle()->trigger($selectPlugged)->call('select', $this);
+        $select = self::pluginHandle()->trigger($selectPlugged)->select($this);
 
         /** 定时发布功能 */
         if (!$selectPlugged) {
-            $select = $this->select('table.contents.*');
-
-            if (!$this->parameter->preview) {
+            if ($this->parameter->preview) {
+                $select = $this->select();
+            } else {
                 if ('post' == $this->parameter->type || 'page' == $this->parameter->type) {
                     if ($this->user->hasLogin()) {
-                        $select->where(
+                        $select = $this->select()->where(
                             'table.contents.status = ? OR table.contents.status = ? 
                                 OR (table.contents.status = ? AND table.contents.authorId = ?)',
                             'publish',
@@ -580,7 +701,7 @@ class Archive extends Contents
                             $this->user->uid
                         );
                     } else {
-                        $select->where(
+                        $select = $this->select()->where(
                             'table.contents.status = ? OR table.contents.status = ?',
                             'publish',
                             'hidden'
@@ -588,14 +709,14 @@ class Archive extends Contents
                     }
                 } else {
                     if ($this->user->hasLogin()) {
-                        $select->where(
+                        $select = $this->select()->where(
                             'table.contents.status = ? OR (table.contents.status = ? AND table.contents.authorId = ?)',
                             'publish',
                             'private',
                             $this->user->uid
                         );
                     } else {
-                        $select->where('table.contents.status = ?', 'publish');
+                        $select = $this->select()->where('table.contents.status = ?', 'publish');
                     }
                 }
                 $select->where('table.contents.created < ?', $this->options->time);
@@ -603,21 +724,21 @@ class Archive extends Contents
         }
 
         /** handle初始化 */
-        self::pluginHandle()->call('handleInit', $this, $select);
+        self::pluginHandle()->handleInit($this, $select);
 
         /** 初始化其它变量 */
-        $this->archiveFeedUrl = $this->options->feedUrl;
-        $this->archiveFeedRssUrl = $this->options->feedRssUrl;
-        $this->archiveFeedAtomUrl = $this->options->feedAtomUrl;
-        $this->archiveKeywords = $this->options->keywords;
-        $this->archiveDescription = $this->options->description;
+        $this->feedUrl = $this->options->feedUrl;
+        $this->feedRssUrl = $this->options->feedRssUrl;
+        $this->feedAtomUrl = $this->options->feedAtomUrl;
+        $this->keywords = $this->options->keywords;
+        $this->description = $this->options->description;
         $this->archiveUrl = $this->options->siteUrl;
 
         if (isset($handles[$this->parameter->type])) {
             $handle = $handles[$this->parameter->type];
             $this->{$handle}($select, $hasPushed);
         } else {
-            $hasPushed = self::pluginHandle()->call('handle', $this->parameter->type, $this, $select);
+            $hasPushed = self::pluginHandle()->handle($this->parameter->type, $this, $select);
         }
 
         /** 初始化皮肤函数 */
@@ -653,18 +774,17 @@ class Archive extends Contents
     /**
      * 重载select
      *
-     * @param mixed $fields
      * @return Query
      * @throws Db\Exception
      */
-    public function select(...$fields): Query
+    public function select(): Query
     {
         if ($this->invokeByFeed) {
             // 对feed输出加入限制条件
-            return parent::select(...$fields)->where('table.contents.allowFeed = ?', 1)
+            return parent::select()->where('table.contents.allowFeed = ?', 1)
                 ->where("table.contents.password IS NULL OR table.contents.password = ''");
         } else {
-            return parent::select(...$fields);
+            return parent::select();
         }
     }
 
@@ -717,8 +837,7 @@ class Archive extends Contents
                 $this->options->index
             );
 
-            self::pluginHandle()->trigger($hasNav)->call(
-                'pageNav',
+            self::pluginHandle()->trigger($hasNav)->pageNav(
                 $this->currentPage,
                 $total,
                 $this->parameter->pageSize,
@@ -756,10 +875,8 @@ class Archive extends Contents
      */
     public function pageLink(string $word = '&laquo; Previous Entries', string $page = 'prev')
     {
-        static $nav;
-
         if ($this->have()) {
-            if (!isset($nav)) {
+            if (empty($this->pageNav)) {
                 $query = Router::url(
                     $this->parameter->type .
                     (false === strpos($this->parameter->type, '_page') ? '_page' : null),
@@ -768,7 +885,7 @@ class Archive extends Contents
                 );
 
                 /** 使用盒状分页 */
-                $nav = new Classic(
+                $this->pageNav = new Classic(
                     $this->getTotal(),
                     $this->currentPage,
                     $this->parameter->pageSize,
@@ -776,7 +893,7 @@ class Archive extends Contents
                 );
             }
 
-            $nav->{$page}($word);
+            $this->pageNav->{$page}($word);
         }
     }
 
@@ -790,9 +907,9 @@ class Archive extends Contents
     {
         $parameter = [
             'parentId'      => $this->hidden ? 0 : $this->cid,
-            'parentContent' => $this,
+            'parentContent' => $this->row,
             'respondId'     => $this->respondId,
-            'commentPage'   => $this->parameter->commentPage,
+            'commentPage'   => $this->request->filter('int')->commentPage,
             'allowComment'  => $this->allow('comment')
         ];
 
@@ -818,11 +935,11 @@ class Archive extends Contents
      *
      * @param integer $limit 最大个数
      * @param integer $offset 重新
-     * @return AttachmentRelated
+     * @return Related
      */
-    public function attachments(int $limit = 0, int $offset = 0): AttachmentRelated
+    public function attachments(int $limit = 0, int $offset = 0): Related
     {
-        return AttachmentRelated::allocWithAlias($this->cid . '-' . uniqid(), [
+        return Related::allocWithAlias($this->cid . '-' . uniqid(), [
             'parentId' => $this->cid,
             'limit'    => $limit,
             'offset'   => $offset
@@ -838,7 +955,7 @@ class Archive extends Contents
      */
     public function theNext(string $format = '%s', ?string $default = null, array $custom = [])
     {
-        $query = $this->select()->where(
+        $content = $this->db->fetchRow($this->select()->where(
             'table.contents.created > ? AND table.contents.created < ?',
             $this->created,
             $this->options->time
@@ -847,14 +964,26 @@ class Archive extends Contents
             ->where('table.contents.type = ?', $this->type)
             ->where("table.contents.password IS NULL OR table.contents.password = ''")
             ->order('table.contents.created', Db::SORT_ASC)
-            ->limit(1);
+            ->limit(1));
 
-        $this->theLink(
-            ContentsFrom::allocWithAlias('next:' . $this->cid, ['query' => $query]),
-            $format,
-            $default,
-            $custom
-        );
+        if ($content) {
+            $content = $this->filter($content);
+            $default = [
+                'title'    => null,
+                'tagClass' => null
+            ];
+            $custom = array_merge($default, $custom);
+            extract($custom);
+
+            $linkText = empty($title) ? $content['title'] : $title;
+            $linkClass = empty($tagClass) ? '' : 'class="' . $tagClass . '" ';
+            $link = '<a ' . $linkClass . 'href="' . $content['permalink']
+                . '" title="' . $content['title'] . '">' . $linkText . '</a>';
+
+            printf($format, $link);
+        } else {
+            echo $default;
+        }
     }
 
     /**
@@ -862,47 +991,31 @@ class Archive extends Contents
      *
      * @access public
      * @param string $format 格式
-     * @param string|null $default 如果没有上一篇,显示的默认文字
+     * @param string $default 如果没有上一篇,显示的默认文字
      * @param array $custom 定制化样式
      * @return void
      */
-    public function thePrev(string $format = '%s', ?string $default = null, array $custom = [])
+    public function thePrev($format = '%s', $default = null, $custom = [])
     {
-        $query = $this->select()->where('table.contents.created < ?', $this->created)
+        $content = $this->db->fetchRow($this->select()->where('table.contents.created < ?', $this->created)
             ->where('table.contents.status = ?', 'publish')
             ->where('table.contents.type = ?', $this->type)
             ->where("table.contents.password IS NULL OR table.contents.password = ''")
             ->order('table.contents.created', Db::SORT_DESC)
-            ->limit(1);
+            ->limit(1));
 
-        $this->theLink(
-            ContentsFrom::allocWithAlias('prev:' . $this->cid, ['query' => $query]),
-            $format,
-            $default,
-            $custom
-        );
-    }
-
-    /**
-     * @param Contents $content
-     * @param string $format
-     * @param string|null $default
-     * @param array $custom
-     * @return void
-     */
-    public function theLink(Contents $content, string $format = '%s', ?string $default = null, array $custom = [])
-    {
-        if ($content->have()) {
+        if ($content) {
+            $content = $this->filter($content);
             $default = [
                 'title'    => null,
                 'tagClass' => null
             ];
             $custom = array_merge($default, $custom);
+            extract($custom);
 
-            $linkText = $custom['title'] ?? $content->title;
-            $linkClass = empty($custom['tagClass']) ? '' : 'class="' . $custom['tagClass'] . '" ';
-            $link = '<a ' . $linkClass . 'href="' . $content->permalink
-                . '" title="' . $content->title . '">' . $linkText . '</a>';
+            $linkText = empty($title) ? $content['title'] : $title;
+            $linkClass = empty($tagClass) ? '' : 'class="' . $tagClass . '" ';
+            $link = '<a ' . $linkClass . 'href="' . $content['permalink'] . '" title="' . $content['title'] . '">' . $linkText . '</a>';
 
             printf($format, $link);
         } else {
@@ -924,12 +1037,12 @@ class Archive extends Contents
         switch ($type) {
             case 'author':
                 /** 如果访问权限被设置为禁止,则tag会被置为空 */
-                return AuthorRelated::alloc(
+                return Author::alloc(
                     ['cid' => $this->cid, 'type' => $this->type, 'author' => $this->author->uid, 'limit' => $limit]
                 );
             default:
                 /** 如果访问权限被设置为禁止,则tag会被置为空 */
-                return ContentsRelated::alloc(
+                return \Widget\Contents\Related::alloc(
                     ['cid' => $this->cid, 'type' => $this->type, 'tags' => $this->tags, 'limit' => $limit]
                 );
         }
@@ -944,19 +1057,18 @@ class Archive extends Contents
     {
         $rules = [];
         $allows = [
-            'description'  => htmlspecialchars($this->archiveDescription ?? ''),
-            'keywords'     => htmlspecialchars($this->archiveKeywords ?? ''),
+            'description'  => htmlspecialchars($this->description ?? ''),
+            'keywords'     => htmlspecialchars($this->keywords ?? ''),
             'generator'    => $this->options->generator,
             'template'     => $this->options->theme,
             'pingback'     => $this->options->xmlRpcUrl,
             'xmlrpc'       => $this->options->xmlRpcUrl . '?rsd',
             'wlw'          => $this->options->xmlRpcUrl . '?wlw',
-            'rss2'         => $this->archiveFeedUrl,
-            'rss1'         => $this->archiveFeedRssUrl,
+            'rss2'         => $this->feedUrl,
+            'rss1'         => $this->feedRssUrl,
             'commentReply' => 1,
             'antiSpam'     => 1,
-            'social'       => 1,
-            'atom'         => $this->archiveFeedAtomUrl
+            'atom'         => $this->feedAtomUrl
         ];
 
         /** 头部是否输出聚合 */
@@ -967,10 +1079,25 @@ class Archive extends Contents
             $allows = array_merge($allows, $rules);
         }
 
-        $allows = self::pluginHandle()->call('headerOptions', $allows, $this);
+        $allows = self::pluginHandle()->headerOptions($allows, $this);
         $title = (empty($this->archiveTitle) ? '' : $this->archiveTitle . ' &raquo; ') . $this->options->title;
 
-        $header = $this->is('single') ? '<link rel="canonical" href="' . $this->archiveUrl . '" />' . "\n" : '';
+        $header = '';
+        if (!empty($allows['description'])) {
+            $header .= '<meta name="description" content="' . $allows['description'] . '" />' . "\n";
+        }
+
+        if (!empty($allows['keywords'])) {
+            $header .= '<meta name="keywords" content="' . $allows['keywords'] . '" />' . "\n";
+        }
+
+        if (!empty($allows['generator'])) {
+            $header .= '<meta name="generator" content="' . $allows['generator'] . '" />' . "\n";
+        }
+
+        if (!empty($allows['template'])) {
+            $header .= '<meta name="template" content="' . $allows['template'] . '" />' . "\n";
+        }
 
         if (!empty($allows['pingback']) && 2 == $this->options->allowXmlRpc) {
             $header .= '<link rel="pingback" href="' . $allows['pingback'] . '" />' . "\n";
@@ -1001,116 +1128,56 @@ class Archive extends Contents
                 . $title . ' &raquo; ATOM 1.0" href="' . $allows['atom'] . '" />' . "\n";
         }
 
-        if (!empty($allows['description'])) {
-            $header .= '<meta name="description" content="' . $allows['description'] . '" />' . "\n";
-        }
-
-        if (!empty($allows['keywords'])) {
-            $header .= '<meta name="keywords" content="' . $allows['keywords'] . '" />' . "\n";
-        }
-
-        if (!empty($allows['generator'])) {
-            $header .= '<meta name="generator" content="' . $allows['generator'] . '" />' . "\n";
-        }
-
-        if (!empty($allows['template'])) {
-            $header .= '<meta name="template" content="' . $allows['template'] . '" />' . "\n";
-        }
-
-        if (!empty($allows['social'])) {
-            $header .= '<meta property="og:type" content="' . ($this->is('single') ? 'article' : 'website') . '" />' . "\n";
-            $header .= '<meta property="og:url" content="' . $this->archiveUrl . '" />' . "\n";
-            $header .= '<meta name="twitter:title" property="og:title" itemprop="name" content="'
-                . htmlspecialchars($this->archiveTitle ?? $this->options->title) . '" />' . "\n";
-            $header .= '<meta name="twitter:description" property="og:description" itemprop="description" content="'
-                . htmlspecialchars($this->archiveDescription ?? ($this->options->description ?? '')) . '" />' . "\n";
-            $header .= '<meta property="og:site_name" content="' . htmlspecialchars($this->options->title) . '" />' . "\n";
-            $header .= '<meta name="twitter:card" content="summary" />' . "\n";
-            $header .= '<meta name="twitter:domain" content="' . $this->options->siteDomain . '" />' . "\n";
-        }
-
         if ($this->options->commentsThreaded && $this->is('single')) {
             if ('' != $allows['commentReply']) {
                 if (1 == $allows['commentReply']) {
-                    $header .= <<<EOF
-<script type="text/javascript">
+                    $header .= "<script type=\"text/javascript\">
 (function () {
     window.TypechoComment = {
-        dom : function (sel) {
-            return document.querySelector(sel);
-        },
-        
-        visiable: function (el, show) {
-            el.style.display = show ? '' : 'none';
+        dom : function (id) {
+            return document.getElementById(id);
         },
     
         create : function (tag, attr) {
-            const el = document.createElement(tag);
+            var el = document.createElement(tag);
         
-            for (const key in attr) {
+            for (var key in attr) {
                 el.setAttribute(key, attr[key]);
             }
         
             return el;
         },
-        
-        inputParent: function (response, coid) {
-            const form = 'form' === response.tagName ? response : response.querySelector('form');
-            let input = form.querySelector('input[name=parent]');
-            
-            if (null == input && coid) {
+
+        reply : function (cid, coid) {
+            var comment = this.dom(cid), parent = comment.parentNode,
+                response = this.dom('" . $this->respondId . "'), input = this.dom('comment-parent'),
+                form = 'form' == response.tagName ? response : response.getElementsByTagName('form')[0],
+                textarea = response.getElementsByTagName('textarea')[0];
+
+            if (null == input) {
                 input = this.create('input', {
                     'type' : 'hidden',
-                    'name' : 'parent'
+                    'name' : 'parent',
+                    'id'   : 'comment-parent'
                 });
 
                 form.appendChild(input);
             }
-            
-            if (coid) {
-                input.setAttribute('value', coid);
-            } else if (input) {
-                input.parentNode.removeChild(input);
-            }
-        },
-        
-        getChild: function (root, node) {
-            const parentNode = node.parentNode;
-            
-            if (parentNode === null) {
-                return null;
-            } else if (parentNode === root) {
-                return node;
-            } else {
-                return this.getChild(root, parentNode);
-            }
-        },
 
-        reply : function (htmlId, coid, btn) {
-            const response = this.dom('#{$this->respondId}'),
-                textarea = response.querySelector('textarea[name=text]'),
-                comment = this.dom('#' + htmlId),
-                child = this.getChild(comment, btn);
+            input.setAttribute('value', coid);
 
-            this.inputParent(response, coid);
-
-            if (this.dom('#{$this->respondId}-holder') === null) {
-                const holder = this.create('div', {
-                    'id' : '{$this->respondId}-holder'
+            if (null == this.dom('comment-form-place-holder')) {
+                var holder = this.create('div', {
+                    'id' : 'comment-form-place-holder'
                 });
 
                 response.parentNode.insertBefore(holder, response);
             }
-            
-            if (child) {
-                comment.insertBefore(response, child.nextSibling);
-            } else {
-                comment.appendChild(response);
-            }
 
-            this.visiable(this.dom('#cancel-comment-reply-link'), true);
+            comment.appendChild(response);
+            this.dom('cancel-comment-reply-link').style.display = '';
 
-            if (null != textarea) {
+            if (null != textarea && 'text' == textarea.name) {
                 textarea.focus();
             }
 
@@ -1118,23 +1185,25 @@ class Archive extends Contents
         },
 
         cancelReply : function () {
-            const response = this.dom('#{$this->respondId}'),
-                holder = this.dom('#{$this->respondId}-holder');
+            var response = this.dom('{$this->respondId}'),
+            holder = this.dom('comment-form-place-holder'), input = this.dom('comment-parent');
 
-            this.inputParent(response, false);
+            if (null != input) {
+                input.parentNode.removeChild(input);
+            }
 
-            if (null === holder) {
+            if (null == holder) {
                 return true;
             }
 
-            this.visiable(this.dom('#cancel-comment-reply-link'), false);
+            this.dom('cancel-comment-reply-link').style.display = 'none';
             holder.parentNode.insertBefore(response, holder);
             return false;
         }
     };
 })();
 </script>
-EOF;
+";
                 } else {
                     $header .= '<script src="' . $allows['commentReply'] . '" type="text/javascript"></script>';
                 }
@@ -1145,41 +1214,45 @@ EOF;
         if ($this->options->commentsAntiSpam && $this->is('single')) {
             if ('' != $allows['antiSpam']) {
                 if (1 == $allows['antiSpam']) {
-                    $shuffled = Common::shuffleScriptVar($this->security->getToken($this->request->getRequestUrl()));
-                    $header .= <<<EOF
-<script type="text/javascript">
+                    $header .= "<script type=\"text/javascript\">
 (function () {
-    const events = ['scroll', 'mousemove', 'keyup', 'touchstart'];
-    let added = false;
+    var event = document.addEventListener ? {
+        add: 'addEventListener',
+        triggers: ['scroll', 'mousemove', 'keyup', 'touchstart'],
+        load: 'DOMContentLoaded'
+    } : {
+        add: 'attachEvent',
+        triggers: ['onfocus', 'onmousemove', 'onkeyup', 'ontouchstart'],
+        load: 'onload'
+    }, added = false;
 
-    document.addEventListener('DOMContentLoaded', function () {
-        const response = document.querySelector('#{$this->respondId}');
+    document[event.add](event.load, function () {
+        var r = document.getElementById('{$this->respondId}'),
+            input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = '_';
+        input.value = " . Common::shuffleScriptVar($this->security->getToken($this->request->getRequestUrl())) . "
 
-        if (null != response) {
-            const form = 'form' === response.tagName ? response : response.querySelector('form');
-            const input = document.createElement('input');
-            
-            input.type = 'hidden';
-            input.name = '_';
-            input.value = {$shuffled};
- 
-            if (form) {
+        if (null != r) {
+            var forms = r.getElementsByTagName('form');
+            if (forms.length > 0) {
                 function append() {
                     if (!added) {
-                        form.appendChild(input);
+                        forms[0].appendChild(input);
                         added = true;
                     }
                 }
             
-                for (const event of events) {
-                    window.addEventListener(event, append);
+                for (var i = 0; i < event.triggers.length; i ++) {
+                    var trigger = event.triggers[i];
+                    document[event.add](trigger, append);
+                    window[event.add](trigger, append);
                 }
             }
         }
     });
 })();
-</script>
-EOF;
+</script>";
                 } else {
                     $header .= '<script src="' . $allows['antiSpam'] . '" type="text/javascript"></script>';
                 }
@@ -1190,7 +1263,7 @@ EOF;
         echo $header;
 
         /** 插件支持 */
-        self::pluginHandle()->call('header', $header, $this);
+        self::pluginHandle()->header($header, $this);
     }
 
     /**
@@ -1198,7 +1271,7 @@ EOF;
      */
     public function footer()
     {
-        self::pluginHandle()->call('footer', $this);
+        self::pluginHandle()->footer($this);
     }
 
     /**
@@ -1250,7 +1323,7 @@ EOF;
      */
     public function keywords(string $split = ',', string $default = '')
     {
-        echo empty($this->archiveKeywords) ? $default : str_replace(',', $split, htmlspecialchars($this->archiveKeywords ?? ''));
+        echo empty($this->keywords) ? $default : str_replace(',', $split, htmlspecialchars($this->keywords ?? ''));
     }
 
     /**
@@ -1276,76 +1349,168 @@ EOF;
         if (2 == $this->options->allowXmlRpc) {
             $this->response->setHeader('X-Pingback', $this->options->xmlRpcUrl);
         }
-        $valid = false;
+        $validated = false;
 
         //~ 自定义模板
         if (!empty($this->themeFile)) {
             if (file_exists($this->themeDir . $this->themeFile)) {
-                $valid = true;
+                $validated = true;
             }
         }
 
-        if (!$valid && !empty($this->archiveType)) {
+        if (!$validated && !empty($this->archiveType)) {
             //~ 首先找具体路径, 比如 category/default.php
-            if (!empty($this->archiveSlug)) {
+            if (!$validated && !empty($this->archiveSlug)) {
                 $themeFile = $this->archiveType . '/' . $this->archiveSlug . '.php';
                 if (file_exists($this->themeDir . $themeFile)) {
                     $this->themeFile = $themeFile;
-                    $valid = true;
+                    $validated = true;
                 }
             }
 
             //~ 然后找归档类型路径, 比如 category.php
-            if (!$valid) {
+            if (!$validated) {
                 $themeFile = $this->archiveType . '.php';
                 if (file_exists($this->themeDir . $themeFile)) {
                     $this->themeFile = $themeFile;
-                    $valid = true;
+                    $validated = true;
                 }
             }
 
             //针对attachment的hook
-            if (!$valid && 'attachment' == $this->archiveType) {
+            if (!$validated && 'attachment' == $this->archiveType) {
                 if (file_exists($this->themeDir . 'page.php')) {
                     $this->themeFile = 'page.php';
-                    $valid = true;
+                    $validated = true;
                 } elseif (file_exists($this->themeDir . 'post.php')) {
                     $this->themeFile = 'post.php';
-                    $valid = true;
+                    $validated = true;
                 }
             }
 
             //~ 最后找归档路径, 比如 archive.php 或者 single.php
-            if (!$valid && 'index' != $this->archiveType && 'front' != $this->archiveType) {
+            if (!$validated && 'index' != $this->archiveType && 'front' != $this->archiveType) {
                 $themeFile = $this->archiveSingle ? 'single.php' : 'archive.php';
                 if (file_exists($this->themeDir . $themeFile)) {
                     $this->themeFile = $themeFile;
-                    $valid = true;
+                    $validated = true;
                 }
             }
 
-            if (!$valid) {
+            if (!$validated) {
                 $themeFile = 'index.php';
                 if (file_exists($this->themeDir . $themeFile)) {
                     $this->themeFile = $themeFile;
-                    $valid = true;
+                    $validated = true;
                 }
             }
         }
 
         /** 文件不存在 */
-        if (!$valid) {
+        if (!$validated) {
             throw new WidgetException(_t('文件不存在'), 500);
         }
 
         /** 挂接插件 */
-        self::pluginHandle()->call('beforeRender', $this);
+        self::pluginHandle()->beforeRender($this);
 
         /** 输出模板 */
         require_once $this->themeDir . $this->themeFile;
 
         /** 挂接插件 */
-        self::pluginHandle()->call('afterRender', $this);
+        self::pluginHandle()->afterRender($this);
+    }
+
+    /**
+     * 输出feed
+     *
+     * @throws WidgetException
+     */
+    public function feed()
+    {
+        if ($this->feedType == Feed::RSS1) {
+            $feedUrl = $this->feedRssUrl;
+        } elseif ($this->feedType == Feed::ATOM1) {
+            $feedUrl = $this->feedAtomUrl;
+        } else {
+            $feedUrl = $this->feedUrl;
+        }
+
+        $this->checkPermalink($feedUrl);
+
+        $this->feed->setSubTitle($this->description);
+        $this->feed->setFeedUrl($feedUrl);
+        $this->feed->setBaseUrl($this->archiveUrl);
+
+        if ($this->is('single') || 'comments' == $this->parameter->type) {
+            $this->feed->setTitle(_t(
+                '%s 的评论',
+                $this->options->title . ($this->archiveTitle ? ' - ' . $this->archiveTitle : null)
+            ));
+
+            if ('comments' == $this->parameter->type) {
+                $comments = Recent::alloc('pageSize=10');
+            } else {
+                $comments = Recent::alloc('pageSize=10&parentId=' . $this->cid);
+            }
+
+            while ($comments->next()) {
+                $suffix = self::pluginHandle()->trigger($plugged)->commentFeedItem($this->feedType, $comments);
+                if (!$plugged) {
+                    $suffix = null;
+                }
+
+                $this->feed->addItem([
+                    'title'   => $comments->author,
+                    'content' => $comments->content,
+                    'date'    => $comments->created,
+                    'link'    => $comments->permalink,
+                    'author'  => (object)[
+                        'screenName' => $comments->author,
+                        'url'        => $comments->url,
+                        'mail'       => $comments->mail
+                    ],
+                    'excerpt' => strip_tags($comments->content),
+                    'suffix'  => $suffix
+                ]);
+            }
+        } else {
+            $this->feed->setTitle($this->options->title . ($this->archiveTitle ? ' - ' . $this->archiveTitle : null));
+
+            while ($this->next()) {
+                $suffix = self::pluginHandle()->trigger($plugged)->feedItem($this->feedType, $this);
+                if (!$plugged) {
+                    $suffix = null;
+                }
+
+                $feedUrl = '';
+                if (Feed::RSS2 == $this->feedType) {
+                    $feedUrl = $this->feedUrl;
+                } elseif (Feed::RSS1 == $this->feedType) {
+                    $feedUrl = $this->feedRssUrl;
+                } elseif (Feed::ATOM1 == $this->feedType) {
+                    $feedUrl = $this->feedAtomUrl;
+                }
+
+                $this->feed->addItem([
+                    'title'           => $this->title,
+                    'content'         => $this->options->feedFullText ? $this->content
+                        : (false !== strpos($this->text, '<!--more-->') ? $this->excerpt .
+                            "<p class=\"more\"><a href=\"{$this->permalink}\" title=\"{$this->title}\">[...]</a></p>"
+                            : $this->content),
+                    'date'            => $this->created,
+                    'link'            => $this->permalink,
+                    'author'          => $this->author,
+                    'excerpt'         => $this->___description(),
+                    'comments'        => $this->commentsNum,
+                    'commentsFeedUrl' => $feedUrl,
+                    'suffix'          => $suffix
+                ]);
+            }
+        }
+
+        $this->response->setContentType($this->feedContentType);
+        echo (string) $this->feed;
     }
 
     /**
@@ -1356,12 +1521,11 @@ EOF;
      * @param string|null $archiveSlug 归档名称
      * @return boolean
      */
-    public function is(string $archiveType, ?string $archiveSlug = null): bool
+    public function is(string $archiveType, ?string $archiveSlug = null)
     {
         return ($archiveType == $this->archiveType ||
                 (($this->archiveSingle ? 'single' : 'archive') == $archiveType && 'index' != $this->archiveType) ||
-                ('index' == $archiveType && $this->makeSinglePageAsFrontPage) ||
-                ('feed' == $archiveType && $this->invokeByFeed))
+                ('index' == $archiveType && $this->makeSinglePageAsFrontPage))
             && (empty($archiveSlug) || $archiveSlug == $this->archiveSlug);
     }
 
@@ -1373,26 +1537,10 @@ EOF;
      */
     public function query($select)
     {
-        self::pluginHandle()->trigger($queryPlugged)->call('query', $this, $select);
+        self::pluginHandle()->trigger($queryPlugged)->query($this, $select);
         if (!$queryPlugged) {
             $this->db->fetchAll($select, [$this, 'push']);
         }
-    }
-
-    /**
-     * @return array
-     */
-    protected function ___directory(): array
-    {
-        if ('page' == $this->type) {
-            $page = PageRows::alloc('current=' . $this->cid);
-            $directory = $page->getAllParentsSlug($this->cid);
-            $directory[] = $this->slug;
-
-            return $directory;
-        }
-
-        return parent::___directory();
     }
 
     /**
@@ -1407,7 +1555,7 @@ EOF;
         $commentUrl = parent::___commentUrl();
 
         //不依赖js的父级评论
-        $reply = $this->request->filter('int')->get('replyTo');
+        $reply = $this->request->filter('int')->replyTo;
         if ($reply && $this->is('single')) {
             $commentUrl .= '?parent=' . $reply;
         }
@@ -1416,48 +1564,68 @@ EOF;
     }
 
     /**
-     * 检查链接是否正确
+     * 导入对象
+     *
+     * @param Archive $widget 需要导入的对象
      */
-    private function checkPermalink()
+    private function import(Archive $widget)
     {
-        $type = $this->parameter->type;
+        $currentProperties = get_object_vars($this);
 
-        if (
-            in_array($type, ['index', 404])
-            || $this->makeSinglePageAsFrontPage    // 自定义首页不处理
-            || !$this->parameter->checkPermalink
-        ) { // 强制关闭
-            return;
-        }
+        foreach ($currentProperties as $name => $value) {
+            if (false !== strpos('|request|response|parameter|feed|feedType|currentFeedUrl|', '|' . $name . '|')) {
+                continue;
+            }
 
-        if ($this->archiveSingle) {
-            $permalink = $this->permalink;
-        } else {
-            $path = Router::url(
-                $type,
-                new class ($this->currentPage, $this->pageRow) implements Router\ParamsDelegateInterface {
-                    private Router\ParamsDelegateInterface $pageRow;
-                    private int $currentPage;
+            if (isset($widget->{$name})) {
+                $this->{$name} = $widget->{$name};
+            } else {
+                $method = ucfirst($name);
+                $setMethod = 'set' . $method;
+                $getMethod = 'get' . $method;
 
-                    public function __construct(int $currentPage, Router\ParamsDelegateInterface $pageRow)
-                    {
-                        $this->pageRow = $pageRow;
-                        $this->currentPage = $currentPage;
-                    }
+                if (
+                    method_exists($this, $setMethod)
+                    && method_exists($widget, $getMethod)
+                ) {
+                    $value = $widget->{$getMethod}();
 
-                    public function getRouterParam(string $key): string
-                    {
-                        switch ($key) {
-                            case 'page':
-                                return $this->currentPage;
-                            default:
-                                return $this->pageRow->getRouterParam($key);
-                        }
+                    if ($value !== null) {
+                        $this->{$setMethod}($widget->{$getMethod}());
                     }
                 }
-            );
+            }
+        }
+    }
 
-            $permalink = Common::url($path, $this->options->index);
+    /**
+     * 检查链接是否正确
+     *
+     * @param string|null $permalink
+     */
+    private function checkPermalink(?string $permalink = null)
+    {
+        if (!isset($permalink)) {
+            $type = $this->parameter->type;
+
+            if (
+                in_array($type, ['index', 'comment_page', 404])
+                || $this->makeSinglePageAsFrontPage    // 自定义首页不处理
+                || !$this->parameter->checkPermalink
+            ) { // 强制关闭
+                return;
+            }
+
+            if ($this->archiveSingle) {
+                $permalink = $this->permalink;
+            } else {
+                $value = array_merge($this->pageRow, [
+                    'page' => $this->currentPage
+                ]);
+
+                $path = Router::url($type, $value);
+                $permalink = Common::url($path, $this->options->index);
+            }
         }
 
         $requestUrl = $this->request->getRequestUrl();
@@ -1481,7 +1649,7 @@ EOF;
         $select->where('table.contents.type = ?', 'post');
 
         /** 插件接口 */
-        self::pluginHandle()->call('indexHandle', $this, $select);
+        self::pluginHandle()->indexHandle($this, $select);
     }
 
     /**
@@ -1525,7 +1693,7 @@ EOF;
         $hasPushed = true;
 
         /** 插件接口 */
-        self::pluginHandle()->call('error404Handle', $this, $select);
+        self::pluginHandle()->error404Handle($this, $select);
     }
 
     /**
@@ -1537,6 +1705,17 @@ EOF;
      */
     private function singleHandle(Query $select, bool &$hasPushed)
     {
+        if ('comment_page' == $this->parameter->type) {
+            $params = [];
+            $matched = Router::match($this->request->permalink);
+
+            if ($matched && $matched instanceof Archive && $matched->is('single')) {
+                $this->import($matched);
+                $hasPushed = true;
+                return;
+            }
+        }
+
         /** 将这两个设置提前是为了保证在调用query的plugin时可以在插件中使用is判断初步归档类型 */
         /** 如果需要更细判断，则可以使用singleHandle来实现 */
         $this->archiveSingle = true;
@@ -1551,23 +1730,18 @@ EOF;
         }
 
         /** 如果是单篇文章或独立页面 */
-        if ($this->request->is('cid')) {
-            $select->where('table.contents.cid = ?', $this->request->filter('int')->get('cid'));
+        if (isset($this->request->cid)) {
+            $select->where('table.contents.cid = ?', $this->request->filter('int')->cid);
         }
 
         /** 匹配缩略名 */
-        if ($this->request->is('slug')) {
-            $select->where('table.contents.slug = ?', $this->request->get('slug'));
-        }
-
-        if ($this->request->is('directory') && 'page' == $this->parameter->type) {
-            $directory = explode('/', $this->request->get('directory'));
-            $select->where('slug = ?', $directory[count($directory) - 1]);
+        if (isset($this->request->slug) && !$this->parameter->preview) {
+            $select->where('table.contents.slug = ?', $this->request->slug);
         }
 
         /** 匹配时间 */
-        if ($this->request->is('year')) {
-            $year = $this->request->filter('int')->get('year');
+        if (isset($this->request->year) && !$this->parameter->preview) {
+            $year = $this->request->filter('int')->year;
 
             $fromMonth = 1;
             $toMonth = 12;
@@ -1575,14 +1749,15 @@ EOF;
             $fromDay = 1;
             $toDay = 31;
 
-            if ($this->request->is('month')) {
-                $fromMonth = $this->request->filter('int')->get('month');
+            if (isset($this->request->month)) {
+                $fromMonth = $this->request->filter('int')->month;
                 $toMonth = $fromMonth;
 
+                $fromDay = 1;
                 $toDay = date('t', mktime(0, 0, 0, $toMonth, 1, $year));
 
-                if ($this->request->is('day')) {
-                    $fromDay = $this->request->filter('int')->get('day');
+                if (isset($this->request->day)) {
+                    $fromDay = $this->request->filter('int')->day;
                     $toDay = $fromDay;
                 }
             }
@@ -1600,13 +1775,13 @@ EOF;
 
         if (
             $this->request->isPost()
-            && $this->request->is('protectPassword')
+            && isset($this->request->protectPassword)
             && !$this->parameter->preview
         ) {
             $this->security->protect();
             Cookie::set(
-                'protectPassword_' . $this->request->filter('int')->get('protectCID'),
-                $this->request->get('protectPassword')
+                'protectPassword_' . $this->request->filter('int')->protectCID,
+                $this->request->protectPassword
             );
 
             $isPasswordPosted = true;
@@ -1616,7 +1791,13 @@ EOF;
         $select->limit(1);
         $this->query($select);
 
-        if (!$this->have()) {
+        if (
+            !$this->have()
+            || (isset($this->request->category)
+                && $this->category != $this->request->category && !$this->parameter->preview)
+            || (isset($this->request->directory)
+                && $this->request->directory != implode('/', $this->directory) && !$this->parameter->preview)
+        ) {
             if (!$this->invokeFromOutside) {
                 /** 对没有索引情况下的判断 */
                 throw new WidgetException(_t('请求的地址不存在'), 404);
@@ -1642,35 +1823,29 @@ EOF;
 
         //对自定义首页使用全局变量
         if (!$this->makeSinglePageAsFrontPage) {
-            $this->archiveFeedUrl = $this->feedUrl;
+            $this->feedUrl = $this->row['feedUrl'];
 
             /** RSS 1.0 */
-            $this->archiveFeedRssUrl = $this->feedRssUrl;
+            $this->feedRssUrl = $this->row['feedRssUrl'];
 
             /** ATOM 1.0 */
-            $this->archiveFeedAtomUrl = $this->feedAtomUrl;
+            $this->feedAtomUrl = $this->row['feedAtomUrl'];
 
             /** 设置标题 */
             $this->archiveTitle = $this->title;
 
             /** 设置关键词 */
-            $this->archiveKeywords = implode(',', array_column($this->tags, 'name'));
+            $this->keywords = implode(',', array_column($this->tags, 'name'));
 
             /** 设置描述 */
-            $this->archiveDescription = $this->plainExcerpt;
+            $this->description = $this->___description();
         }
 
         /** 设置归档类型 */
-        if ($this->parameter->preview && $this->type === 'revision') {
-            $parent = ContentsFrom::allocWithAlias($this->parent, ['cid' => $this->parent]);
-            $this->archiveType = $parent->type;
-        } else {
-            [$this->archiveType] = explode('_', $this->type);
-        }
+        [$this->archiveType] = explode('_', $this->type);
 
         /** 设置归档缩略名 */
-        $this->archiveSlug = ('post' == $this->archiveType || 'attachment' == $this->archiveType)
-            ? $this->cid : $this->slug;
+        $this->archiveSlug = ('post' == $this->type || 'attachment' == $this->type) ? $this->cid : $this->slug;
 
         /** 设置归档地址 */
         $this->archiveUrl = $this->permalink;
@@ -1683,16 +1858,17 @@ EOF;
         $hasPushed = true;
 
         /** 插件接口 */
-        self::pluginHandle()->call('singleHandle', $this, $select);
+        self::pluginHandle()->singleHandle($this, $select);
     }
 
     /**
      * 处理分类
      *
      * @param Query $select 查询对象
+     * @param boolean $hasPushed 是否已经压入队列
      * @throws WidgetException|Db\Exception
      */
-    private function categoryHandle(Query $select)
+    private function categoryHandle(Query $select, bool &$hasPushed)
     {
         /** 如果是分类 */
         $categorySelect = $this->db->select()
@@ -1700,33 +1876,33 @@ EOF;
             ->where('type = ?', 'category')
             ->limit(1);
 
-        if ($this->request->is('mid')) {
-            $categorySelect->where('mid = ?', $this->request->filter('int')->get('mid'));
+        if (isset($this->request->mid)) {
+            $categorySelect->where('mid = ?', $this->request->filter('int')->mid);
         }
 
-        if ($this->request->is('slug')) {
-            $categorySelect->where('slug = ?', $this->request->get('slug'));
+        if (isset($this->request->slug)) {
+            $categorySelect->where('slug = ?', $this->request->slug);
         }
 
-        if ($this->request->is('directory')) {
-            $directory = explode('/', $this->request->get('directory'));
+        if (isset($this->request->directory)) {
+            $directory = explode('/', $this->request->directory);
             $categorySelect->where('slug = ?', $directory[count($directory) - 1]);
         }
 
-        $category = MetasFrom::allocWithAlias('category:' . $this->cid, [
-            'query' => $categorySelect
-        ]);
-
-        if (!$category->have()) {
+        $category = $this->db->fetchRow($categorySelect);
+        if (empty($category)) {
             throw new WidgetException(_t('分类不存在'), 404);
         }
 
-        if (isset($directory) && (implode('/', $directory) != implode('/', $category->directory))) {
+        $categoryListWidget = Rows::alloc('current=' . $category['mid']);
+        $category = $categoryListWidget->filter($category);
+
+        if (isset($directory) && ($this->request->directory != implode('/', $category['directory']))) {
             throw new WidgetException(_t('父级分类不存在'), 404);
         }
 
-        $children = $category->getAllChildIds($category->mid);
-        $children[] = $category->mid;
+        $children = $categoryListWidget->getAllChildren($category['mid']);
+        $children[] = $category['mid'];
 
         /** fix sql92 by 70 */
         $select->join('table.relationships', 'table.contents.cid = table.relationships.cid')
@@ -1735,123 +1911,133 @@ EOF;
             ->group('table.contents.cid');
 
         /** 设置分页 */
-        $this->pageRow = $category;
+        $this->pageRow = array_merge($category, [
+            'slug'      => urlencode($category['slug']),
+            'directory' => implode('/', array_map('urlencode', $category['directory']))
+        ]);
 
         /** 设置关键词 */
-        $this->archiveKeywords = $category->name;
+        $this->keywords = $category['name'];
 
         /** 设置描述 */
-        $this->archiveDescription = $category->description;
+        $this->description = $category['description'];
 
         /** 设置头部feed */
         /** RSS 2.0 */
-        $this->archiveFeedUrl = $category->feedUrl;
+        $this->feedUrl = $category['feedUrl'];
 
         /** RSS 1.0 */
-        $this->archiveFeedRssUrl = $category->feedRssUrl;
+        $this->feedRssUrl = $category['feedRssUrl'];
 
         /** ATOM 1.0 */
-        $this->archiveFeedAtomUrl = $category->feedAtomUrl;
+        $this->feedAtomUrl = $category['feedAtomUrl'];
 
         /** 设置标题 */
-        $this->archiveTitle = $category->name;
+        $this->archiveTitle = $category['name'];
 
         /** 设置归档类型 */
         $this->archiveType = 'category';
 
         /** 设置归档缩略名 */
-        $this->archiveSlug = $category->slug;
+        $this->archiveSlug = $category['slug'];
 
         /** 设置归档地址 */
-        $this->archiveUrl = $category->permalink;
+        $this->archiveUrl = $category['permalink'];
 
         /** 插件接口 */
-        self::pluginHandle()->call('categoryHandle', $this, $select);
+        self::pluginHandle()->categoryHandle($this, $select);
     }
 
     /**
      * 处理标签
      *
      * @param Query $select 查询对象
+     * @param boolean $hasPushed 是否已经压入队列
      * @throws WidgetException|Db\Exception
      */
-    private function tagHandle(Query $select)
+    private function tagHandle(Query $select, bool &$hasPushed)
     {
         $tagSelect = $this->db->select()->from('table.metas')
             ->where('type = ?', 'tag')->limit(1);
 
-        if ($this->request->is('mid')) {
-            $tagSelect->where('mid = ?', $this->request->filter('int')->get('mid'));
+        if (isset($this->request->mid)) {
+            $tagSelect->where('mid = ?', $this->request->filter('int')->mid);
         }
 
-        if ($this->request->is('slug')) {
-            $tagSelect->where('slug = ?', $this->request->get('slug'));
+        if (isset($this->request->slug)) {
+            $tagSelect->where('slug = ?', $this->request->slug);
         }
 
         /** 如果是标签 */
-        $tag = MetasFrom::allocWithAlias('tag:' . $this->cid, [
-            'query' => $tagSelect
-        ]);
+        $tag = $this->db->fetchRow(
+            $tagSelect,
+            [Metas::alloc(), 'filter']
+        );
 
-        if (!$tag->have()) {
+        if (!$tag) {
             throw new WidgetException(_t('标签不存在'), 404);
         }
 
         /** fix sql92 by 70 */
         $select->join('table.relationships', 'table.contents.cid = table.relationships.cid')
-            ->where('table.relationships.mid = ?', $tag->mid)
+            ->where('table.relationships.mid = ?', $tag['mid'])
             ->where('table.contents.type = ?', 'post');
 
         /** 设置分页 */
-        $this->pageRow = $tag;
+        $this->pageRow = array_merge($tag, [
+            'slug' => urlencode($tag['slug'])
+        ]);
 
         /** 设置关键词 */
-        $this->archiveKeywords = $tag->name;
+        $this->keywords = $tag['name'];
 
         /** 设置描述 */
-        $this->archiveDescription = $tag->description;
+        $this->description = $tag['description'];
 
         /** 设置头部feed */
         /** RSS 2.0 */
-        $this->archiveFeedUrl = $tag->feedUrl;
+        $this->feedUrl = $tag['feedUrl'];
 
         /** RSS 1.0 */
-        $this->archiveFeedRssUrl = $tag->feedRssUrl;
+        $this->feedRssUrl = $tag['feedRssUrl'];
 
         /** ATOM 1.0 */
-        $this->archiveFeedAtomUrl = $tag->feedAtomUrl;
+        $this->feedAtomUrl = $tag['feedAtomUrl'];
 
         /** 设置标题 */
-        $this->archiveTitle = $tag->name;
+        $this->archiveTitle = $tag['name'];
 
         /** 设置归档类型 */
         $this->archiveType = 'tag';
 
         /** 设置归档缩略名 */
-        $this->archiveSlug = $tag->slug;
+        $this->archiveSlug = $tag['slug'];
 
         /** 设置归档地址 */
-        $this->archiveUrl = $tag->permalink;
+        $this->archiveUrl = $tag['permalink'];
 
         /** 插件接口 */
-        self::pluginHandle()->call('tagHandle', $this, $select);
+        self::pluginHandle()->tagHandle($this, $select);
     }
 
     /**
      * 处理作者
      *
      * @param Query $select 查询对象
+     * @param boolean $hasPushed 是否已经压入队列
      * @throws WidgetException|Db\Exception
      */
-    private function authorHandle(Query $select)
+    private function authorHandle(Query $select, bool &$hasPushed)
     {
-        $uid = $this->request->filter('int')->get('uid');
+        $uid = $this->request->filter('int')->uid;
 
-        $author = Author::allocWithAlias('user:' . $uid, [
-            'uid' => $uid
-        ]);
+        $author = $this->db->fetchRow(
+            $this->db->select()->from('table.users')
+            ->where('uid = ?', $uid),
+            [User::alloc(), 'filter']
+        );
 
-        if (!$author->have()) {
+        if (!$author) {
             throw new WidgetException(_t('作者不存在'), 404);
         }
 
@@ -1862,35 +2048,35 @@ EOF;
         $this->pageRow = $author;
 
         /** 设置关键词 */
-        $this->archiveKeywords = $author->screenName;
+        $this->keywords = $author['screenName'];
 
         /** 设置描述 */
-        $this->archiveDescription = $author->screenName;
+        $this->description = $author['screenName'];
 
         /** 设置头部feed */
         /** RSS 2.0 */
-        $this->archiveFeedUrl = $author->feedUrl;
+        $this->feedUrl = $author['feedUrl'];
 
         /** RSS 1.0 */
-        $this->archiveFeedRssUrl = $author->feedRssUrl;
+        $this->feedRssUrl = $author['feedRssUrl'];
 
         /** ATOM 1.0 */
-        $this->archiveFeedAtomUrl = $author->feedAtomUrl;
+        $this->feedAtomUrl = $author['feedAtomUrl'];
 
         /** 设置标题 */
-        $this->archiveTitle = $author->screenName;
+        $this->archiveTitle = $author['screenName'];
 
         /** 设置归档类型 */
         $this->archiveType = 'author';
 
         /** 设置归档缩略名 */
-        $this->archiveSlug = $author->uid;
+        $this->archiveSlug = $author['uid'];
 
         /** 设置归档地址 */
-        $this->archiveUrl = $author->permalink;
+        $this->archiveUrl = $author['permalink'];
 
         /** 插件接口 */
-        self::pluginHandle()->call('authorHandle', $this, $select);
+        self::pluginHandle()->authorHandle($this, $select);
     }
 
     /**
@@ -1898,14 +2084,15 @@ EOF;
      *
      * @access private
      * @param Query $select 查询对象
+     * @param boolean $hasPushed 是否已经压入队列
      * @return void
      */
-    private function dateHandle(Query $select)
+    private function dateHandle(Query $select, &$hasPushed)
     {
         /** 如果是按日期归档 */
-        $year = $this->request->filter('int')->get('year');
-        $month = $this->request->filter('int')->get('month');
-        $day = $this->request->filter('int')->get('day');
+        $year = $this->request->filter('int')->year;
+        $month = $this->request->filter('int')->month;
+        $day = $this->request->filter('int')->day;
 
         if (!empty($year) && !empty($month) && !empty($day)) {
 
@@ -1949,51 +2136,33 @@ EOF;
         /** 设置归档类型 */
         $this->archiveType = 'date';
 
+        /** 设置头部feed */
+        $value = [
+            'year' => $year,
+            'month' => str_pad($month, 2, '0', STR_PAD_LEFT),
+            'day' => str_pad($day, 2, '0', STR_PAD_LEFT)
+        ];
+
         /** 设置分页 */
-        $this->pageRow = new class ($year, $month, $day) implements Router\ParamsDelegateInterface {
-            private int $year;
-            private int $month;
-            private int $day;
-
-            public function __construct(int $year, int $month, int $day)
-            {
-                $this->year = $year;
-                $this->month = $month;
-                $this->day = $day;
-            }
-
-            public function getRouterParam(string $key): string
-            {
-                switch ($key) {
-                    case 'year':
-                        return $this->year;
-                    case 'month':
-                        return str_pad($this->month, 2, '0', STR_PAD_LEFT);
-                    case 'day':
-                        return str_pad($this->day, 2, '0', STR_PAD_LEFT);
-                    default:
-                        return '{' . $key . '}';
-                }
-            }
-        };
+        $this->pageRow = $value;
 
         /** 获取当前路由,过滤掉翻页情况 */
         $currentRoute = str_replace('_page', '', $this->parameter->type);
 
         /** RSS 2.0 */
-        $this->archiveFeedUrl = Router::url($currentRoute, $this->pageRow, $this->options->feedUrl);
+        $this->feedUrl = Router::url($currentRoute, $value, $this->options->feedUrl);
 
         /** RSS 1.0 */
-        $this->archiveFeedRssUrl = Router::url($currentRoute, $this->pageRow, $this->options->feedRssUrl);
+        $this->feedRssUrl = Router::url($currentRoute, $value, $this->options->feedRssUrl);
 
         /** ATOM 1.0 */
-        $this->archiveFeedAtomUrl = Router::url($currentRoute, $this->pageRow, $this->options->feedAtomUrl);
+        $this->feedAtomUrl = Router::url($currentRoute, $value, $this->options->feedAtomUrl);
 
         /** 设置归档地址 */
-        $this->archiveUrl = Router::url($currentRoute, $this->pageRow, $this->options->index);
+        $this->archiveUrl = Router::url($currentRoute, $value, $this->options->index);
 
         /** 插件接口 */
-        self::pluginHandle()->call('dateHandle', $this, $select);
+        self::pluginHandle()->dateHandle($this, $select);
     }
 
     /**
@@ -2004,12 +2173,12 @@ EOF;
      * @param boolean $hasPushed 是否已经压入队列
      * @return void
      */
-    private function searchHandle(Query $select, bool &$hasPushed)
+    private function searchHandle(Query $select, &$hasPushed)
     {
         /** 增加自定义搜索引擎接口 */
         //~ fix issue 40
-        $keywords = $this->request->filter('url', 'search')->get('keywords');
-        self::pluginHandle()->trigger($hasPushed)->call('search', $keywords, $this);
+        $keywords = $this->request->filter('url', 'search')->keywords;
+        self::pluginHandle()->trigger($hasPushed)->search($keywords, $this);
 
         if (!$hasPushed) {
             $searchQuery = '%' . str_replace(' ', '%', $keywords) . '%';
@@ -2030,37 +2199,20 @@ EOF;
         }
 
         /** 设置关键词 */
-        $this->archiveKeywords = $keywords;
+        $this->keywords = $keywords;
 
         /** 设置分页 */
-        $this->pageRow = new class ($keywords) implements Router\ParamsDelegateInterface {
-            private string $keywords;
-
-            public function __construct(string $keywords)
-            {
-                $this->keywords = $keywords;
-            }
-
-            public function getRouterParam(string $key): string
-            {
-                switch ($key) {
-                    case 'keywords':
-                        return urlencode($this->keywords);
-                    default:
-                        return '{' . $key . '}';
-                }
-            }
-        };
+        $this->pageRow = ['keywords' => urlencode($keywords)];
 
         /** 设置头部feed */
         /** RSS 2.0 */
-        $this->archiveFeedUrl = Router::url('search', $this->pageRow, $this->options->feedUrl);
+        $this->feedUrl = Router::url('search', ['keywords' => $keywords], $this->options->feedUrl);
 
         /** RSS 1.0 */
-        $this->archiveFeedRssUrl = Router::url('search', $this->pageRow, $this->options->feedAtomUrl);
+        $this->feedRssUrl = Router::url('search', ['keywords' => $keywords], $this->options->feedAtomUrl);
 
         /** ATOM 1.0 */
-        $this->archiveFeedAtomUrl = Router::url('search', $this->pageRow, $this->options->feedAtomUrl);
+        $this->feedAtomUrl = Router::url('search', ['keywords' => $keywords], $this->options->feedAtomUrl);
 
         /** 设置标题 */
         $this->archiveTitle = $keywords;
@@ -2072,9 +2224,9 @@ EOF;
         $this->archiveSlug = $keywords;
 
         /** 设置归档地址 */
-        $this->archiveUrl = Router::url('search', $this->pageRow, $this->options->index);
+        $this->archiveUrl = Router::url('search', ['keywords' => $keywords], $this->options->index);
 
         /** 插件接口 */
-        self::pluginHandle()->call('searchHandle', $this, $select);
+        self::pluginHandle()->searchHandle($this, $select);
     }
 }

@@ -14,12 +14,12 @@ class Pingback
     /**
      * @var string
      */
-    private string $html;
+    private $html;
 
     /**
      * @var string
      */
-    private string $target;
+    private $target;
 
     /**
      * @param string $url
@@ -73,7 +73,7 @@ class Pingback
      */
     public function getTitle(): string
     {
-        if (preg_match("/<title>([^<]*?)<\/title>/is", $this->html, $matchTitle)) {
+        if (preg_match("/\<title\>([^<]*?)\<\/title\\>/is", $this->html, $matchTitle)) {
             return Common::subStr(Common::removeXSS(trim(strip_tags($matchTitle[1]))), 0, 150, '...');
         }
 

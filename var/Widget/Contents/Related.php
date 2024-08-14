@@ -3,6 +3,7 @@
 namespace Widget\Contents;
 
 use Typecho\Db;
+use Typecho\Db\Query;
 use Typecho\Db\Exception;
 use Widget\Base\Contents;
 
@@ -32,24 +33,7 @@ class Related extends Contents
 
         if ($this->parameter->tags) {
             $tagsGroup = implode(',', array_column($this->parameter->tags, 'mid'));
-            $this->db->fetchAll($this->select(
-                'DISTINCT table.contents.cid',
-                'table.contents.title',
-                'table.contents.slug',
-                'table.contents.created',
-                'table.contents.authorId',
-                'table.contents.modified',
-                'table.contents.type',
-                'table.contents.status',
-                'table.contents.text',
-                'table.contents.commentsNum',
-                'table.contents.order',
-                'table.contents.template',
-                'table.contents.password',
-                'table.contents.allowComment',
-                'table.contents.allowPing',
-                'table.contents.allowFeed'
-            )
+            $this->db->fetchAll($this->select()
                 ->join('table.relationships', 'table.contents.cid = table.relationships.cid')
                 ->where('table.relationships.mid IN (' . $tagsGroup . ')')
                 ->where('table.contents.cid <> ?', $this->parameter->cid)
@@ -60,5 +44,34 @@ class Related extends Contents
                 ->order('table.contents.created', Db::SORT_DESC)
                 ->limit($this->parameter->limit), [$this, 'push']);
         }
+    }
+
+    /**
+     * 获取查询对象
+     *
+     * @return Query
+     * @throws Exception
+     */
+    public function select(): Query
+    {
+        return $this->db->select(
+            'DISTINCT table.contents.cid',
+            'table.contents.title',
+            'table.contents.slug',
+            'table.contents.created',
+            'table.contents.authorId',
+            'table.contents.modified',
+            'table.contents.type',
+            'table.contents.status',
+            'table.contents.text',
+            'table.contents.commentsNum',
+            'table.contents.order',
+            'table.contents.template',
+            'table.contents.password',
+            'table.contents.allowComment',
+            'table.contents.allowPing',
+            'table.contents.allowFeed'
+        )
+            ->from('table.contents');
     }
 }

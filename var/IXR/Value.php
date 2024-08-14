@@ -11,13 +11,13 @@ class Value
 {
     private $data;
 
-    private ?string $type;
+    private $type;
 
     /**
      * @param mixed $data
-     * @param string|null $type
+     * @param bool|string $type
      */
-    public function __construct($data, ?string $type = null)
+    public function __construct($data, $type = false)
     {
         $this->data = $data;
         if (!$type) {

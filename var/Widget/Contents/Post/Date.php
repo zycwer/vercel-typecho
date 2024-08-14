@@ -5,6 +5,7 @@ namespace Widget\Contents\Post;
 use Typecho\Config;
 use Typecho\Db;
 use Typecho\Router;
+use Typecho\Widget;
 use Widget\Base;
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {

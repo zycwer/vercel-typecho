@@ -9,7 +9,6 @@ use Typecho\Widget\Helper\Form;
 use Utils\PasswordHash;
 use Widget\ActionInterface;
 use Widget\Base\Options;
-use Widget\Base\Users;
 use Widget\Notice;
 use Widget\Plugins\Rows;
 
@@ -25,10 +24,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * @copyright Copyright (c) 2008 Typecho team (http://www.typecho.org)
  * @license GNU General Public License 2.0
  */
-class Profile extends Users implements ActionInterface
+class Profile extends Edit implements ActionInterface
 {
-    use EditTrait;
-
     /**
      * 执行函数
      */
@@ -151,7 +148,7 @@ class Profile extends Users implements ActionInterface
      * @param string|null $group 用户组
      * @throws Plugin\Exception
      */
-    public function personalForm(string $pluginName, string $className, string $pluginFileName, ?string &$group): Form
+    public function personalForm(string $pluginName, string $className, string $pluginFileName, ?string &$group)
     {
         /** 构建表格 */
         $form = new Form($this->security->getIndex('/action/users-profile'), Form::POST_METHOD);
@@ -211,7 +208,7 @@ class Profile extends Users implements ActionInterface
      *
      * @return Form
      */
-    public function profileForm(): Form
+    public function profileForm()
     {
         /** 构建表格 */
         $form = new Form($this->security->getIndex('/action/users-profile'), Form::POST_METHOD);
@@ -222,7 +219,7 @@ class Profile extends Users implements ActionInterface
         $form->addInput($screenName);
 
         /** 个人主页地址 */
-        $url = new Form\Element\Url('url', null, null, _t('个人主页地址'), _t('此用户的个人主页地址, 请用 <code>https://</code> 开头.'));
+        $url = new Form\Element\Text('url', null, null, _t('个人主页地址'), _t('此用户的个人主页地址, 请用 <code>http://</code> 开头.'));
         $form->addInput($url);
 
         /** 电子邮箱地址 */
@@ -261,9 +258,9 @@ class Profile extends Users implements ActionInterface
      */
     public function updateOptions()
     {
-        $settings['autoSave'] = $this->request->is('autoSave=1') ? 1 : 0;
-        $settings['markdown'] = $this->request->is('markdown=1') ? 1 : 0;
-        $settings['xmlrpcMarkdown'] = $this->request->is('xmlrpcMarkdown=1') ? 1 : 0;
+        $settings['autoSave'] = $this->request->autoSave ? 1 : 0;
+        $settings['markdown'] = $this->request->markdown ? 1 : 0;
+        $settings['xmlrpcMarkdown'] = $this->request->xmlrpcMarkdown ? 1 : 0;
         $defaultAllow = $this->request->getArray('defaultAllow');
 
         $settings['defaultAllowComment'] = in_array('comment', $defaultAllow) ? 1 : 0;
@@ -369,7 +366,7 @@ class Profile extends Users implements ActionInterface
     public function updatePersonal()
     {
         /** 获取插件名称 */
-        $pluginName = $this->request->get('plugin');
+        $pluginName = $this->request->plugin;
 
         /** 获取已启用插件 */
         $plugins = Plugin::export();
@@ -377,7 +374,7 @@ class Profile extends Users implements ActionInterface
 
         /** 获取插件入口 */
         [$pluginFileName, $className] = Plugin::portal(
-            $pluginName,
+            $this->request->plugin,
             __TYPECHO_ROOT_DIR__ . '/' . __TYPECHO_PLUGIN_DIR__
         );
         $info = Plugin::parseInfo($pluginFileName);
@@ -405,13 +402,13 @@ class Profile extends Users implements ActionInterface
             ) {
                 Options::alloc()
                     ->update(
-                        ['value' => json_encode($settings)],
+                        ['value' => serialize($settings)],
                         $this->db->sql()->where('name = ? AND user = ?', $name, $this->user->uid)
                     );
             } else {
                 Options::alloc()->insert([
                     'name'  => $name,
-                    'value' => json_encode($settings),
+                    'value' => serialize($settings),
                     'user'  => $this->user->uid
                 ]);
             }

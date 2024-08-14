@@ -25,7 +25,7 @@ class Mysqli implements Adapter
      * @access private
      * @var \mysqli
      */
-    private \mysqli $dbLink;
+    private $dbLink;
 
     /**
      * 判断适配器是否可用
@@ -152,9 +152,9 @@ class Mysqli implements Adapter
      * 将数据查询的其中一行作为对象取出,其中字段名对应对象属性
      *
      * @param \mysqli_result $resource 查询的资源数据
-     * @return \stdClass|null
+     * @return object|null
      */
-    public function fetchObject($resource): ?\stdClass
+    public function fetchObject($resource): ?object
     {
         return $resource->fetch_object();
     }

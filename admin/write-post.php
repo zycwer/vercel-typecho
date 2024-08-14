@@ -2,8 +2,7 @@
 include 'common.php';
 include 'header.php';
 include 'menu.php';
-
-$post = \Widget\Contents\Post\Edit::alloc()->prepare();
+\Widget\Contents\Post\Edit::alloc()->to($post);
 ?>
 <div class="main">
     <div class="body container">
@@ -15,7 +14,7 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                         <?php if ($post->draft['cid'] != $post->cid): ?>
                             <?php $postModifyDate = new \Typecho\Date($post->draft['modified']); ?>
                             <cite
-                                class="edit-draft-notice"><?php _e('你正在编辑的是保存于 %s 的修订版, 你也可以 <a href="%s">删除它</a>', $postModifyDate->word(),
+                                class="edit-draft-notice"><?php _e('你正在编辑的是保存于 %s 的草稿, 你也可以 <a href="%s">删除它</a>', $postModifyDate->word(),
                                     $security->getIndex('/action/contents-post-edit?do=deleteDraft&cid=' . $post->cid)); ?></cite>
                         <?php else: ?>
                             <cite class="edit-draft-notice"><?php _e('当前正在编辑的是未发布的草稿'); ?></cite>
@@ -33,14 +32,11 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                     $permalink = ltrim($permalink, '/');
                     $permalink = preg_replace("/\[([_a-z0-9-]+)[^\]]*\]/i", "{\\1}", $permalink);
                     if ($post->have()) {
-                        $permalink = preg_replace_callback(
-                            "/\{(cid|category|year|month|day)\}/i",
-                            function ($matches) use ($post) {
-                                $key = $matches[1];
-                                return $post->getRouterParam($key);
-                            },
-                            $permalink
-                        );
+                        $permalink = str_replace([
+                            '{cid}', '{category}', '{year}', '{month}', '{day}'
+                        ], [
+                            $post->cid, $post->category, $post->year, $post->month, $post->day
+                        ], $permalink);
                     }
                     $input = '<input type="text" id="slug" name="slug" autocomplete="off" value="' . htmlspecialchars($post->slug ?? '') . '" class="mono" />';
                     ?>
@@ -51,7 +47,7 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                     <p>
                         <label for="text" class="sr-only"><?php _e('文章内容'); ?></label>
                         <textarea style="height: <?php $options->editorSize(); ?>px" autocomplete="off" id="text"
-                                  name="text" class="w-100 mono"><?php echo htmlspecialchars($post->text); ?></textarea>
+                                  name="text" class="w-100 mono"><?php echo htmlspecialchars($post->text ?? ''); ?></textarea>
                     </p>
 
                     <?php include 'custom-fields.php'; ?>
@@ -62,7 +58,6 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                                     class="i-caret-left"></i> <?php _e('取消预览'); ?></button>
                         </span>
                         <span class="right">
-                            <input type="hidden" name="do" value="publish" />
                             <input type="hidden" name="cid" value="<?php $post->cid(); ?>"/>
                             <button type="button" id="btn-preview" class="btn"><i
                                     class="i-exlink"></i> <?php _e('预览文章'); ?></button>
@@ -76,7 +71,7 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                         </span>
                     </p>
 
-                    <?php \Typecho\Plugin::factory('admin/write-post.php')->call('content', $post); ?>
+                    <?php \Typecho\Plugin::factory('admin/write-post.php')->content($post); ?>
                 </div>
 
                 <div id="edit-secondary" class="col-mb-12 col-tb-3" role="complementary">
@@ -98,7 +93,13 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                             <label class="typecho-label"><?php _e('分类'); ?></label>
                             <?php \Widget\Metas\Category\Rows::alloc()->to($category); ?>
                             <ul>
-                                <?php $categories = array_column($post->categories, 'mid'); ?>
+                                <?php
+                                if ($post->have()) {
+                                    $categories = array_column($post->categories, 'mid');
+                                } else {
+                                    $categories = [];
+                                }
+                                ?>
                                 <?php while ($category->next()): ?>
                                     <li><?php echo str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $category->levels); ?><input
                                             type="checkbox" id="category-<?php $category->mid(); ?>"
@@ -113,11 +114,11 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
 
                         <section class="typecho-post-option">
                             <label for="token-input-tags" class="typecho-label"><?php _e('标签'); ?></label>
-                            <p><input id="tags" name="tags" type="text" value="<?php $post->have() ? $post->tags(',', false) : ''; ?>"
+                            <p><input id="tags" name="tags" type="text" value="<?php $post->tags(',', false); ?>"
                                       class="w-100 text"/></p>
                         </section>
 
-                        <?php \Typecho\Plugin::factory('admin/write-post.php')->call('option', $post); ?>
+                        <?php \Typecho\Plugin::factory('admin/write-post.php')->option($post); ?>
 
                         <button type="button" id="advance-panel-btn" class="btn btn-xs"><?php _e('高级选项'); ?> <i
                                 class="i-caret-down"></i></button>
@@ -171,7 +172,7 @@ $post = \Widget\Contents\Post\Edit::alloc()->prepare();
                                 <p class="description"><?php _e('每一行一个引用地址, 用回车隔开'); ?></p>
                             </section>
 
-                            <?php \Typecho\Plugin::factory('admin/write-post.php')->call('advanceOption', $post); ?>
+                            <?php \Typecho\Plugin::factory('admin/write-post.php')->advanceOption($post); ?>
                         </div><!-- end #advance-panel -->
 
                         <?php if ($post->have()): ?>
@@ -203,13 +204,13 @@ include 'common-js.php';
 include 'form-js.php';
 include 'write-js.php';
 
-\Typecho\Plugin::factory('admin/write-post.php')->trigger($plugged)->call('richEditor', $post);
+\Typecho\Plugin::factory('admin/write-post.php')->trigger($plugged)->richEditor($post);
 if (!$plugged) {
     include 'editor-js.php';
 }
 
 include 'file-upload-js.php';
 include 'custom-fields-js.php';
-\Typecho\Plugin::factory('admin/write-post.php')->call('bottom', $post);
+\Typecho\Plugin::factory('admin/write-post.php')->bottom($post);
 include 'footer.php';
 ?>

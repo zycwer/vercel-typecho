@@ -23,15 +23,15 @@ abstract class Pdo implements Adapter
      * @access protected
      * @var \PDO
      */
-    protected \PDO $object;
+    protected $object;
 
     /**
      * 最后一次操作的数据表
      *
      * @access protected
-     * @var string|null
+     * @var string
      */
-    protected ?string $lastTable;
+    protected $lastTable;
 
     /**
      * 判断适配器是否可用
@@ -140,9 +140,9 @@ abstract class Pdo implements Adapter
      * 将数据查询的其中一行作为对象取出,其中字段名对应对象属性
      *
      * @param \PDOStatement $resource 查询的资源数据
-     * @return \stdClass|null
+     * @return object|null
      */
-    public function fetchObject($resource): ?\stdClass
+    public function fetchObject($resource): ?object
     {
         return $resource->fetchObject() ?: null;
     }

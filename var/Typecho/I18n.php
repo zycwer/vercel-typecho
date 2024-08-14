@@ -15,17 +15,17 @@ class I18n
      * 是否已经载入的标志位
      *
      * @access private
-     * @var GetTextMulti|null
+     * @var GetTextMulti
      */
-    private static ?GetTextMulti $loaded = null;
+    private static $loaded;
 
     /**
      * 语言文件
      *
      * @access private
-     * @var string|null
+     * @var string
      */
-    private static ?string $lang = null;
+    private static $lang = null;
 
     /**
      * 翻译文字

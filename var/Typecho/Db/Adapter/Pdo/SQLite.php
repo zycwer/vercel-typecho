@@ -48,9 +48,9 @@ class SQLite extends Pdo
      * 将数据查询的其中一行作为对象取出,其中字段名对应对象属性
      *
      * @param \PDOStatement $resource 查询的资源数据
-     * @return \stdClass|null
+     * @return object|null
      */
-    public function fetchObject($resource): ?\stdClass
+    public function fetchObject($resource): ?object
     {
         $result = $this->fetch($resource);
         return $result ? (object) $result : null;

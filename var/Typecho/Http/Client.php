@@ -30,33 +30,33 @@ class Client
      *
      * @var string
      */
-    private string $method = self::METHOD_GET;
-
-    /**
-     * User-Agent
-     *
-     * @var string
-     */
-    public string $agent;
+    private $method = self::METHOD_GET;
 
     /**
      * 传递参数
      *
      * @var string
      */
-    private string $query;
+    private $query;
+
+    /**
+     * User Agent
+     *
+     * @var string
+     */
+    private $agent;
 
     /**
      * 设置超时
      *
-     * @var integer
+     * @var string
      */
-    private int $timeout = 3;
+    private $timeout = 3;
 
     /**
      * @var bool
      */
-    private bool $multipart = true;
+    private $multipart = true;
 
     /**
      * 需要在body中传递的值
@@ -71,40 +71,40 @@ class Client
      * @access private
      * @var array
      */
-    private array $headers = [];
+    private $headers = [];
 
     /**
      * cookies
      *
      * @var array
      */
-    private array $cookies = [];
+    private $cookies = [];
 
     /**
      * @var array
      */
-    private array $options = [];
+    private $options = [];
 
     /**
      * 回执头部信息
      *
      * @var array
      */
-    private array $responseHeader = [];
+    private $responseHeader = [];
 
     /**
      * 回执代码
      *
      * @var integer
      */
-    private int $responseStatus;
+    private $responseStatus;
 
     /**
      * 回执身体
      *
      * @var string
      */
-    private string $responseBody;
+    private $responseBody;
 
     /**
      * 设置指定的COOKIE值
@@ -116,7 +116,6 @@ class Client
     public function setCookie(string $key, $value): Client
     {
         $this->cookies[$key] = $value;
-        $this->setHeader('Cookie', str_replace('&', '; ', http_build_query($this->cookies)));
         return $this;
     }
 
@@ -305,6 +304,10 @@ class Client
                 $headers[] = $key . ': ' . $val;
             }
 
+            if (!empty($this->cookies)) {
+                $headers[] = 'Cookie: ' . str_replace('&', '; ', http_build_query($this->cookies));
+            }
+
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         }
 
@@ -350,7 +353,7 @@ class Client
      * 获取回执的头部信息
      *
      * @param string $key 头信息名称
-     * @return ?string
+     * @return string
      */
     public function getResponseHeader(string $key): ?string
     {

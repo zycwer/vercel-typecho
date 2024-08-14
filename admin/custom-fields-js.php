@@ -20,7 +20,7 @@ $(document).ready(function () {
                     $(this).remove();
                 });
 
-                $(this).parents('form').trigger('change');
+                $(this).parents('form').trigger('field');
             }
         });
     }
@@ -30,7 +30,7 @@ $(document).ready(function () {
     });
 
     $('#custom-field button.operate-add').click(function () {
-        var html = '<tr><td><input type="text" name="fieldNames[]" placeholder="<?php _e('字段名称'); ?>" pattern="^[_a-zA-Z][_a-zA-Z0-9]*$" oninput="this.reportValidity()" class="text-s w-100"></td>'
+        var html = '<tr><td><input type="text" name="fieldNames[]" placeholder="<?php _e('字段名称'); ?>" class="text-s w-100"></td>'
                 + '<td><select name="fieldTypes[]" id="">'
                 + '<option value="str"><?php _e('字符'); ?></option>'
                 + '<option value="int"><?php _e('整数'); ?></option>'
@@ -39,6 +39,10 @@ $(document).ready(function () {
                 + '<td><textarea name="fieldValues[]" placeholder="<?php _e('字段值'); ?>" class="text-s w-100" rows="2"></textarea></td>'
                 + '<td><button type="button" class="btn btn-xs"><?php _e('删除'); ?></button></td></tr>',
             el = $(html).hide().appendTo('#custom-field table tbody').fadeIn();
+
+            $(':input', el).bind('input change', function () {
+                $(this).parents('form').trigger('field');
+            });
 
         attachDeleteEvent(el);
     });

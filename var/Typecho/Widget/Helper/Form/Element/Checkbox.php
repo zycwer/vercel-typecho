@@ -24,7 +24,7 @@ class Checkbox extends Element
      *
      * @var array
      */
-    private array $options = [];
+    private $options = [];
 
     /**
      * 初始化当前输入项
@@ -61,7 +61,7 @@ class Checkbox extends Element
      */
     protected function inputValue($value)
     {
-        $values = isset($value) ? (is_array($value) ? $value : [$value]) : [];
+        $values = is_null($value) ? [] : (is_array($value) ? $value : [$value]);
 
         foreach ($this->options as $option) {
             $option->removeAttribute('checked');

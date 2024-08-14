@@ -12,10 +12,9 @@ interface QueryInterface
     /**
      * 查询方法
      *
-     * @param mixed $fields 字段
      * @return Query
      */
-    public function select(...$fields): Query;
+    public function select(): Query;
 
     /**
      * 获得所有记录数

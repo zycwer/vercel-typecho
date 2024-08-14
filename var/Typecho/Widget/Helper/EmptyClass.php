@@ -18,7 +18,7 @@ class EmptyClass
      * @access private
      * @var EmptyClass
      */
-    private static ?EmptyClass $instance = null;
+    private static $instance = null;
 
     /**
      * 获取单例句柄
@@ -41,10 +41,9 @@ class EmptyClass
      * @access public
      * @param string $name 方法名
      * @param array $args 参数列表
-     * @return $this
+     * @return void
      */
     public function __call(string $name, array $args)
     {
-        return $this;
     }
 }

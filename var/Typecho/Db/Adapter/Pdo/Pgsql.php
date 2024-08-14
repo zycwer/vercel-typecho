@@ -62,14 +62,8 @@ class Pgsql extends Pdo
      */
     public function init(Config $config): \PDO
     {
-        $dsn = "pgsql:dbname={$config->database};host={$config->host};port={$config->port}";
-
-        if ($config->sslVerify) {
-            $dsn .= ';sslmode=require';
-        }
-
         $pdo = new \PDO(
-            $dsn,
+            "pgsql:dbname={$config->database};host={$config->host};port={$config->port}",
             $config->user,
             $config->password
         );
